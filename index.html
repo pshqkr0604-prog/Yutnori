@@ -9,7 +9,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'yut-nori-app-v5';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'yut-nori-app-v11';
 
 // --- Yut Board Logic ---
 const BOARD_GRAPH = {
@@ -21,13 +21,14 @@ const BOARD_GRAPH = {
   26: [27], 27: [23], 28: [29], 29: [20],
 };
 
+// 완벽한 대각선 3등분 비율 적용
 const BOARD_POSITIONS = {
   1: { x: 100, y: 80 }, 2: { x: 100, y: 60 }, 3: { x: 100, y: 40 }, 4: { x: 100, y: 20 }, 5: { x: 100, y: 0 },
   6: { x: 80, y: 0 }, 7: { x: 60, y: 0 }, 8: { x: 40, y: 0 }, 9: { x: 20, y: 0 }, 10: { x: 0, y: 0 },
   11: { x: 0, y: 20 }, 12: { x: 0, y: 40 }, 13: { x: 0, y: 60 }, 14: { x: 0, y: 80 }, 15: { x: 0, y: 100 },
   16: { x: 20, y: 100 }, 17: { x: 40, y: 100 }, 18: { x: 60, y: 100 }, 19: { x: 80, y: 100 }, 20: { x: 100, y: 100 },
-  21: { x: 80, y: 20 }, 22: { x: 60, y: 40 }, 23: { x: 50, y: 50 }, 24: { x: 40, y: 60 }, 25: { x: 20, y: 80 },
-  26: { x: 20, y: 20 }, 27: { x: 40, y: 40 }, 28: { x: 60, y: 60 }, 29: { x: 80, y: 80 }
+  21: { x: 83.33, y: 16.67 }, 22: { x: 66.67, y: 33.33 }, 23: { x: 50, y: 50 }, 24: { x: 33.33, y: 66.67 }, 25: { x: 16.67, y: 83.33 },
+  26: { x: 16.67, y: 16.67 }, 27: { x: 33.33, y: 33.33 }, 28: { x: 66.67, y: 66.67 }, 29: { x: 83.33, y: 83.33 }
 };
 
 // states: 1 = 평평한 배(UP), 0 = 둥근 등(UP)
@@ -40,12 +41,121 @@ const YUT_RESULTS = {
   '5': { name: '모', steps: 5, states: [0, 0, 0, 0] }
 };
 
-// 고급 장기알 스타일의 프리미엄 토큰 설정
 const CHARACTERS = {
-  '유비': { hanja: '劉', name: '유비', bg: 'from-[#166534] to-[#14532d]', shadowColor: '#052e16' },
-  '조조': { hanja: '曹', name: '조조', bg: 'from-[#1e3a8a] to-[#172554]', shadowColor: '#0f172a' },
-  '손권': { hanja: '孫', name: '손권', bg: 'from-[#991b1b] to-[#7f1d1d]', shadowColor: '#450a0a' }
+  '유비': { hanja: '劉', name: '유비', bgDark: '#064e3b', bgLight: '#22c55e' },
+  '조조': { hanja: '曹', name: '조조', bgDark: '#1e3a8a', bgLight: '#3b82f6' },
+  '손권': { hanja: '孫', name: '손권', bgDark: '#7f1d1d', bgLight: '#ef4444' }
 };
+
+// ==========================================
+// 3D Chess Piece Component (인물 체스말 형태 구현)
+// ==========================================
+function ChessPiece3D({ character, count, size = "normal" }) {
+  if (!character) return null;
+  const isLarge = size === 'large';
+  const scaleClass = isLarge ? 'scale-[1.8] origin-bottom' : 'scale-110 origin-bottom';
+
+  return (
+    <div className={`relative flex flex-col items-center justify-end w-10 h-16 pointer-events-none filter drop-shadow-[0_5px_5px_rgba(0,0,0,0.4)] transform ${scaleClass}`}>
+      <div className="relative z-20 flex flex-col items-center mb-[-4px]">
+        <div className="w-6 h-3 rounded-t-md border border-black/40 shadow-inner" style={{ background: character.bgLight }}></div>
+        <div className="w-5 h-5 bg-[#fcd34d] rounded-full border border-[#b45309] flex items-center justify-center z-10 shadow-sm">
+          <div className="flex gap-1 mt-1">
+            <div className="w-1 h-1 bg-black rounded-full"></div>
+            <div className="w-1 h-1 bg-black rounded-full"></div>
+          </div>
+        </div>
+      </div>
+      <div className="relative z-10 w-8 h-8 rounded-t-xl border-x border-t border-black/40 shadow-inner flex flex-col items-center justify-end pb-1"
+           style={{ background: `linear-gradient(to bottom, ${character.bgLight}, ${character.bgDark})` }}>
+        <span className="text-[9px] font-black text-white/90 drop-shadow-md">{character.hanja}</span>
+      </div>
+      <div className="relative z-0 flex flex-col items-center w-full">
+        <div className="w-9 h-2.5 rounded-[50%] bg-[#475569] border border-[#1e293b] -mb-1 shadow-inner"></div>
+        <div className="w-11 h-3.5 rounded-[50%] bg-[#1e293b] border-2 border-black shadow-[0_3px_5px_rgba(0,0,0,0.6)]"></div>
+      </div>
+      {count > 1 && (
+        <div className="absolute -bottom-1 -right-3 z-30 bg-gradient-to-br from-yellow-300 to-yellow-600 text-yellow-950 font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+          x{count}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// 완벽한 3D 반원통 윷가락 렌더링 컴포넌트 (버그 원천 차단형)
+// ==========================================
+function YutStick3D({ state, isMarked, startX, destX, destY, destRotZ, delay }) {
+  // state: 1 = 평평한 배가 위로(180deg), 0 = 둥근 등이 위로(0deg)
+  const finalRotX = state === 1 ? 180 : 0; 
+  const R = 20; // 윷 반경
+  const length = 140; // 윷 길이
+  
+  // 둥근 등을 15도씩 꺾인 타일들로 구성
+  const faces = [];
+  for (let a = -90; a <= 90; a += 15) {
+    const lightness = 35 - (Math.abs(a) / 90) * 20; 
+    faces.push(
+      <div key={a} className="absolute h-full"
+           style={{
+             width: '6px', // 틈새 방지용 여유 너비
+             backgroundColor: `hsl(25, 70%, ${lightness}%)`,
+             transform: `rotateY(${a}deg) translateZ(${R}px)`,
+             left: '50%',
+             marginLeft: '-3px',
+             backfaceVisibility: 'hidden',
+             WebkitBackfaceVisibility: 'hidden'
+           }} />
+    );
+  }
+
+  return (
+    // 3D 컨테이너. opacity 페이드 아웃이나 그림자를 이 레벨에 절대 넣지 마십시오. (평면화 원인)
+    <div className="absolute origin-center"
+         style={{
+           width: `${R * 2}px`,
+           height: `${length}px`,
+           animation: `yutToss 2.4s cubic-bezier(0.2, 0.8, 0.4, 1) forwards`,
+           animationDelay: `${delay}s`,
+           '--sx': `${startX}px`, '--dx': `${destX}px`, '--dy': `${destY}px`, '--rz': `${destRotZ}deg`, '--frx': `${finalRotX}deg`,
+           transformStyle: 'preserve-3d',
+           WebkitTransformStyle: 'preserve-3d'
+         }}>
+       <div className="w-full h-full relative" style={{ transformStyle: 'preserve-3d', WebkitTransformStyle: 'preserve-3d' }}>
+          
+          {/* 1. 둥근 등 (Curved Back) */}
+          {faces}
+
+          {/* 둥근 등 중앙 "X X X X" 마크 */}
+          <div className="absolute w-full h-full flex flex-col items-center justify-evenly py-4"
+               style={{ transform: `translateZ(${R + 1}px)`, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+             <span className="font-black text-[#290f01] opacity-70 text-2xl transform scale-x-150">X</span>
+             <span className="font-black text-[#290f01] opacity-70 text-2xl transform scale-x-150">X</span>
+             <span className="font-black text-[#290f01] opacity-70 text-xl transform scale-x-150">X</span>
+             <span className="font-black text-[#290f01] opacity-70 text-xl transform scale-x-150">X</span>
+          </div>
+
+          {/* 2. 납작한 배 (Flat Belly) - 민무늬 유지, 빽도만 글씨 */}
+          <div className="absolute w-full h-full bg-[#fde047] border-[3px] border-[#b45309] flex flex-col items-center justify-center"
+               style={{ transform: 'rotateY(180deg) translateZ(0px)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+             <div className="absolute inset-0 opacity-10 bg-[repeating-linear-gradient(90deg,transparent,transparent_2px,#b45309_2px,#b45309_3px)]"></div>
+             {isMarked && (
+               <div className="text-4xl font-black text-red-600 transform -rotate-90 tracking-tighter z-10 drop-shadow-md whitespace-nowrap">
+                 빽도!
+               </div>
+             )}
+          </div>
+
+          {/* 3. 덮개 (상하단 반달형 캡) */}
+          <div className="absolute bg-[#451a03]"
+               style={{ width: `${R*2}px`, height: `${R}px`, borderRadius: `${R*2}px ${R*2}px 0 0`, top: 0, transformOrigin: 'bottom', transform: `translateY(-${R}px) rotateX(90deg)`, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }} />
+          <div className="absolute bg-[#451a03]"
+               style={{ width: `${R*2}px`, height: `${R}px`, borderRadius: `0 0 ${R*2}px ${R*2}px`, bottom: 0, transformOrigin: 'top', transform: `translateY(${R}px) rotateX(-90deg)`, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }} />
+       </div>
+    </div>
+  );
+}
 
 // ==========================================
 // App Component
@@ -88,6 +198,7 @@ export default function App() {
         const data = docSnap.data();
         setRoomData(data);
         if (data.status === 'playing' && currentView !== 'game') setCurrentView('game');
+        else if (data.status === 'turn_select' && currentView !== 'turn_select') setCurrentView('turn_select');
         else if (data.status === 'character_select' && currentView !== 'character_select') setCurrentView('character_select');
         else if (data.status === 'lobby' && currentView !== 'room') setCurrentView('room');
       } else {
@@ -109,6 +220,7 @@ export default function App() {
       turn: 'A',
       throwChances: 1, 
       characters: { A: null, B: null },
+      turnData: null,
       yutQueue: [],
       pieces: {
         A: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ],
@@ -172,10 +284,11 @@ export default function App() {
   if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans">접속 중...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+    <div className="min-h-screen bg-[#f3f4f6] font-sans text-gray-800">
       {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} />}
       {currentView === 'room' && <WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} />}
       {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={appId} />}
+      {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={appId} />}
       {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={appId} />}
     </div>
   );
@@ -189,7 +302,7 @@ function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin }) {
     <div className="max-w-4xl mx-auto p-6 pt-20">
       <div className="text-center mb-12">
         <h1 className="text-5xl font-black text-gray-800 mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
-        <p className="text-gray-500 font-medium text-lg">친구들과 함께 즐기는 온라인 보드게임</p>
+        <p className="text-gray-500 font-medium text-lg">가장 리얼한 온라인 윷놀이 보드게임</p>
       </div>
 
       <div className="bg-white p-6 rounded-2xl border border-gray-200 mb-8 max-w-md mx-auto shadow-sm">
@@ -301,13 +414,19 @@ function CharacterSelectView({ roomData, roomId, user, db, appId }) {
   const confirmSelection = async () => {
     if (!isHost) return;
     if (!roomData.characters.A || !roomData.characters.B) return alert("양 팀 모두 사용할 캐릭터를 선택해야 합니다.");
+    
+    // 캐릭터 선택 후, 무작위로 선공을 결정할 카드 인덱스(0 또는 1)를 뽑습니다.
+    const winningIdx = Math.floor(Math.random() * 2);
+    
     await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-      status: 'playing', turn: 'A', throwChances: 1, logs: arrayUnion('게임이 시작되었습니다! 팀 A 선공.')
+      status: 'turn_select', 
+      turnData: { winningIdx: winningIdx },
+      logs: arrayUnion('캐릭터 선택 완료. 선후공 결정을 진행합니다.')
     });
   };
 
   return (
-    <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+    <div className="h-screen flex flex-col items-center justify-center bg-[#f3f4f6] p-6">
       <h1 className="text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
       <p className="text-gray-500 mb-10">{isHost ? '각 팀에서 사용할 말을 선택해주세요 (중복 불가)' : '방장이 캐릭터를 선택 중입니다...'}</p>
 
@@ -326,7 +445,7 @@ function CharacterSelectView({ roomData, roomId, user, db, appId }) {
                     ${disabled && !isSelectedByMe ? 'opacity-40 grayscale cursor-not-allowed' : ''}
                   `}>
                   {isSelectedByMe && <CheckCircle2 className="absolute top-2 right-2 text-amber-500" size={24}/>}
-                  <PremiumStone character={char} count={1} size="large" />
+                  <ChessPiece3D character={char} count={1} size="large" />
                   <span className={`mt-5 font-bold ${isSelectedByMe ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
                 </div>
               )
@@ -348,7 +467,7 @@ function CharacterSelectView({ roomData, roomId, user, db, appId }) {
                     ${disabled && !isSelectedByMe ? 'opacity-40 grayscale cursor-not-allowed' : ''}
                   `}>
                   {isSelectedByMe && <CheckCircle2 className="absolute top-2 right-2 text-amber-500" size={24}/>}
-                  <PremiumStone character={char} count={1} size="large" />
+                  <ChessPiece3D character={char} count={1} size="large" />
                   <span className={`mt-5 font-bold ${isSelectedByMe ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
                 </div>
               )
@@ -360,7 +479,7 @@ function CharacterSelectView({ roomData, roomId, user, db, appId }) {
       {isHost && (
         <button onClick={confirmSelection} disabled={!roomData.characters.A || !roomData.characters.B}
           className="bg-amber-600 text-white px-16 py-4 rounded-full font-black text-xl hover:bg-amber-700 disabled:opacity-50 transition-all shadow-lg border-2 border-amber-700">
-          게임 시작하기
+          선후공 정하기
         </button>
       )}
     </div>
@@ -368,34 +487,87 @@ function CharacterSelectView({ roomData, roomId, user, db, appId }) {
 }
 
 // ==========================================
-// 3D Premium Stone Component (고급 장기알/마작패 느낌)
+// Turn Select View (선후공 정하기 로직 - 완벽히 가림 처리됨)
 // ==========================================
-function PremiumStone({ character, count, size = "normal" }) {
-  if (!character) return null;
-  const w = size === 'large' ? 'w-20' : 'w-12';
-  const h = size === 'large' ? 'h-20' : 'h-12';
-  const text = size === 'large' ? 'text-4xl' : 'text-xl';
+function TurnSelectView({ roomData, roomId, user, db, appId }) {
+  const isHost = roomData.hostId === user.uid;
+  const turnData = roomData.turnData || {};
+
+  const handlePick = async (idx) => {
+    if (!isHost || turnData.selected !== undefined) return;
+    
+    const isWin = idx === turnData.winningIdx;
+    const hostTeam = roomData.players.find(p => p.uid === roomData.hostId)?.team || 'A';
+    const oppTeam = hostTeam === 'A' ? 'B' : 'A';
+    const firstTeam = isWin ? hostTeam : oppTeam;
+
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+      'turnData.selected': idx,
+      'turnData.firstTeam': firstTeam,
+      logs: arrayUnion(`방장이 카드를 뽑았습니다. ${firstTeam === 'A' ? '팀 A' : '팀 B'}가 선공을 잡았습니다!`)
+    });
+
+    // 3초 뒤 실제 게임으로 전환
+    setTimeout(async () => {
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+        status: 'playing',
+        turn: firstTeam,
+        throwChances: 1
+      });
+    }, 3000);
+  };
 
   return (
-    <div className={`${w} ${h} rounded-full bg-gradient-to-b ${character.bg} flex items-center justify-center relative transform transition-transform border border-white/20`}
-         style={{ boxShadow: `0 6px 0 ${character.shadowColor}, 0 10px 15px rgba(0,0,0,0.4)` }}>
-      
-      {/* 내부 테두리 음각 느낌 */}
-      <div className="absolute inset-[3px] rounded-full border border-white/30 pointer-events-none"></div>
-      <div className="absolute inset-[6px] rounded-full border border-black/20 pointer-events-none"></div>
-      
-      {/* 텍스트 (금박 느낌) */}
-      <span className={`font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-yellow-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] ${text}`}>
-        {character.hanja}
-      </span>
-      
-      {/* 광택 반사광 */}
-      <div className="absolute top-[5%] left-[15%] right-[15%] h-[30%] bg-gradient-to-b from-white/30 to-transparent rounded-full pointer-events-none"></div>
+    <div className="h-screen flex flex-col items-center justify-center bg-[#f3f4f6] p-6 relative overflow-hidden">
+      <h1 className="text-5xl font-black text-gray-800 mb-4 tracking-tighter">선후공 결정</h1>
+      <p className="text-gray-500 mb-16 text-lg font-medium">
+        {isHost ? '방장님, 카드를 하나 선택하여 운명을 시험하세요.' : '방장이 선후공 카드를 고르고 있습니다...'}
+      </p>
 
-      {/* 업기 뱃지 */}
-      {count > 1 && (
-        <div className="absolute -bottom-2 -right-2 bg-gradient-to-b from-yellow-300 to-yellow-500 text-yellow-900 font-black rounded-full w-6 h-6 flex items-center justify-center border-2 border-white shadow-lg text-[11px]">
-          x{count}
+      <div className="flex gap-12 perspective-[1000px]">
+        {[0, 1].map(idx => {
+          const isSelected = turnData.selected === idx;
+          const isRevealed = turnData.selected !== undefined;
+          const isWinCard = idx === turnData.winningIdx;
+          
+          return (
+            <div key={idx} onClick={() => handlePick(idx)}
+                 className={`relative w-48 h-64 cursor-pointer transition-all duration-700
+                   ${!isRevealed && isHost ? 'hover:-translate-y-4 hover:shadow-2xl' : ''}
+                   ${isSelected ? 'scale-110 z-10' : 'scale-100'}
+                 `}
+                 style={{ transformStyle: 'preserve-3d', WebkitTransformStyle: 'preserve-3d', transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
+              
+              {/* Card Back (Faced down) - 완벽한 은폐 적용 */}
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900 rounded-3xl border-4 border-slate-500 shadow-xl flex items-center justify-center"
+                   style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(0deg)' }}>
+                <div className="text-6xl opacity-40 font-black text-white">?</div>
+              </div>
+
+              {/* Card Front (Revealed) */}
+              <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center shadow-2xl"
+                   style={{ 
+                     backfaceVisibility: 'hidden',
+                     WebkitBackfaceVisibility: 'hidden',
+                     transform: 'rotateY(180deg)',
+                     backgroundColor: isWinCard ? '#fef08a' : '#e5e7eb',
+                     borderColor: isWinCard ? '#ca8a04' : '#9ca3af'
+                   }}>
+                <span className={`text-5xl font-black ${isWinCard ? 'text-amber-600' : 'text-gray-500'}`}>
+                  {isWinCard ? '선공' : '후공'}
+                </span>
+                <span className="text-sm font-bold mt-4 opacity-50">
+                  {isWinCard ? '먼저 시작합니다' : '나중에 시작합니다'}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {turnData.selected !== undefined && (
+        <div className="absolute bottom-20 text-2xl font-black text-amber-600 animate-pulse bg-white px-8 py-3 rounded-full shadow-lg border-2 border-amber-200">
+          {turnData.firstTeam === 'A' ? '팀 A' : '팀 B'} 선공! 곧 게임이 시작됩니다...
         </div>
       )}
     </div>
@@ -416,7 +588,6 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
   const isHost = roomData.hostId === user.uid;
 
   const isBotTurn = roomData.players.filter(p => p.team === roomData.turn).every(p => p.isBot);
-  // 실제 멀티플레이에서 핵심 권한 체크 (내 턴이거나, 봇 턴을 방장이 조작할 때만 true)
   const isMyTurn = (roomData.turn === myTeam) || (isHost && isBotTurn);
   const playingTeam = isMyTurn ? roomData.turn : (myTeam || 'A');
 
@@ -430,7 +601,6 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
     return () => unsubscribe();
   }, [db, roomId, appId]);
 
-  // --- 턴 검증 ---
   const checkTurnEnd = async (currentChances, currentQueue) => {
     if (currentChances <= 0 && currentQueue.length === 0) {
       const nextTurn = roomData.turn === 'A' ? 'B' : 'A';
@@ -487,7 +657,7 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
 
       await checkTurnEnd(newChances, newQueue);
 
-    }, 2400); // 3D 물리 애니메이션 지속 시간 (조금 더 길게)
+    }, 2400); 
   };
 
   const calculateDestination = (startPos, steps) => {
@@ -603,13 +773,13 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
 
       elements.push(
         <div key={`pos-${pos}`} onClick={() => isMyTurn && pieces[0].team === playingTeam && handlePieceClick(pieces[0].team, pieces[0].id)}
-          className={`absolute flex items-center justify-center cursor-pointer transition-transform z-10 transform -translate-x-1/2 -translate-y-[60%]
+          className={`absolute flex items-center justify-center cursor-pointer transition-transform z-10 transform -translate-x-1/2 -translate-y-[70%]
             ${isSelected ? 'scale-125 z-20' : 'hover:scale-110'}
           `}
           style={{ left: `${posObj.x}%`, top: `${posObj.y}%` }}
         >
-          {isSelected && <div className="absolute -inset-2 bg-amber-400/50 rounded-full animate-ping blur-sm"></div>}
-          <PremiumStone character={charConfig} count={pieces.length} />
+          {isSelected && <div className="absolute -bottom-1 w-10 h-10 bg-amber-400/50 rounded-full animate-ping blur-sm"></div>}
+          <ChessPiece3D character={charConfig} count={pieces.length} />
         </div>
       );
     });
@@ -620,90 +790,53 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
   const myChar = CHARACTERS[roomData.characters[playingTeam]];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-100">
+    <div className="flex h-screen bg-[#f3f4f6]">
       
-      {/* --- 완벽한 리얼 3D 윷 던지기 (반원 형태의 물리 모션) --- */}
+      {/* --- 완벽한 3D 반원통 윷가락 렌더링 (평면화 원천 차단) --- */}
       {isRolling && (
-        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center overflow-hidden">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity"></div>
+        // overflow-hidden, opacity, filter 등의 속성을 이 래퍼에서 완전히 제거하여 3D 공간 보존
+        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30"></div>
           
-          <div className="relative w-full h-full flex items-center justify-center perspective-[1500px]">
+          <div className="relative w-full h-full flex items-center justify-center perspective-[1500px]" style={{ perspective: '1500px' }}>
             {[0, 1, 2, 3].map((i) => {
-              // 1 = 평면(배) 보임, 0 = 둥근면(등) 보임
               const state = rollingResult?.states[i] || 0;
               const isMarked = (rollingResult?.key === '-1' && i === 0);
               
-              // 결과에 따라 최종 X축 회전 각도를 결정 (0deg = 평면 앞, 180deg = 둥근면 앞)
-              const finalRotX = state === 1 ? 0 : 180;
-              const startX = (i - 1.5) * 45; 
-              const destX = (i - 1.5) * 80 + (Math.random() * 40 - 20);
+              const startX = (i - 1.5) * 60; 
+              const destX = (i - 1.5) * 85 + (Math.random() * 40 - 20);
               const destY = Math.random() * 60 - 30;
-              const destRotZ = Math.random() * 140 - 70;
+              const destRotZ = Math.random() * 120 - 60;
+              const delay = i * 0.05;
 
               return (
-                <div key={i} className="absolute w-[36px] h-[120px] origin-center"
-                  style={{
-                    animation: `yutToss 2.4s cubic-bezier(0.2, 0.8, 0.4, 1) forwards`,
-                    animationDelay: `${i * 0.05}s`,
-                    '--sx': `${startX}px`, '--dx': `${destX}px`, '--dy': `${destY}px`, '--rz': `${destRotZ}deg`, '--frx': `${finalRotX}deg`
-                  }}
-                >
-                   {/* 윷가락 3D 박스 객체 */}
-                   <div className="w-full h-full relative transform-style-3d shadow-2xl">
-                      
-                      {/* 평평한 면 (배) - 밝은 나무색 */}
-                      <div className="absolute inset-0 bg-[#fef08a] border-2 border-[#b45309] rounded-sm flex flex-col items-center justify-between py-4" 
-                           style={{ transform: 'translateZ(10px)', backfaceVisibility: 'hidden' }}>
-                         {isMarked ? (
-                           <div className="w-full h-full flex items-center justify-center text-5xl font-black text-red-600">X</div>
-                         ) : (
-                           <>
-                             <div className="w-2.5 h-2.5 rounded-full bg-[#b45309]/60"></div>
-                             <div className="w-2.5 h-2.5 rounded-full bg-[#b45309]/60"></div>
-                             <div className="w-2.5 h-2.5 rounded-full bg-[#b45309]/60"></div>
-                           </>
-                         )}
-                      </div>
-
-                      {/* 둥근 면 (등) - 입체감을 주는 그라데이션 */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-[#381c00] via-[#92400e] to-[#381c00] border border-[#381c00]" 
-                           style={{ transform: 'rotateX(180deg) translateZ(10px)', backfaceVisibility: 'hidden' }}>
-                      </div>
-                      
-                      {/* 좌측면 */}
-                      <div className="absolute bg-[#78350f] border-y border-[#381c00]" style={{ width: '20px', height: '120px', transform: 'rotateY(-90deg) translateZ(18px)' }}></div>
-                      {/* 우측면 */}
-                      <div className="absolute bg-[#78350f] border-y border-[#381c00]" style={{ width: '20px', height: '120px', transform: 'rotateY(90deg) translateZ(18px)' }}></div>
-                      {/* 상단 캡 */}
-                      <div className="absolute bg-[#b45309]" style={{ width: '36px', height: '20px', transform: 'rotateX(90deg) translateZ(60px)' }}></div>
-                      {/* 하단 캡 */}
-                      <div className="absolute bg-[#b45309]" style={{ width: '36px', height: '20px', transform: 'rotateX(-90deg) translateZ(60px)' }}></div>
-
-                   </div>
-                </div>
+                <YutStick3D 
+                  key={i} state={state} isMarked={isMarked} 
+                  startX={startX} destX={destX} destY={destY} destRotZ={destRotZ} delay={delay} 
+                />
               );
             })}
             
-            <h2 className="absolute text-7xl font-black text-white drop-shadow-[0_4px_20px_rgba(0,0,0,0.8)] opacity-0 z-10"
-                style={{ animation: 'textPop 0.8s ease-out 1.7s forwards' }}>
+            <h2 className="absolute text-8xl font-black text-white drop-shadow-[0_4px_30px_rgba(255,215,0,0.9)] z-10"
+                style={{ opacity: 0, animation: 'textPop 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) 1.8s forwards' }}>
               {rollingResult?.name}!!
             </h2>
 
-            {/* 마구잡이로 구르다가 바닥에 안착하는 물리 애니메이션 수학 */}
+            {/* 공통 CSS 및 애니메이션 (투명도 애니메이션 제거로 평면화 방지) */}
             <style>{`
-              .transform-style-3d { transform-style: preserve-3d; }
+              .transform-style-3d { 
+                transform-style: preserve-3d; 
+                -webkit-transform-style: preserve-3d;
+              }
               @keyframes yutToss {
-                0% { transform: translate3d(var(--sx), 100vh, -100px) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(0.6); }
-                30% { transform: translate3d(calc(var(--sx) + (var(--dx)*0.5)), -15vh, 400px) rotateX(1080deg) rotateY(360deg) rotateZ(calc(var(--rz) * 2)) scale(1.4); } /* 공중에서 비틀기 정점 */
-                60% { transform: translate3d(var(--dx), var(--dy), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(var(--rz)) scale(1); } /* 1차 바닥 터치 */
-                75% { transform: translate3d(calc(var(--dx) + 10px), calc(var(--dy) - 50px), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 15deg)) scale(1); } /* 크게 바운스 */
-                85% { transform: translate3d(calc(var(--dx) + 20px), var(--dy), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 30deg)) scale(1); } /* 2차 바닥 터치 */
-                93% { transform: translate3d(calc(var(--dx) + 25px), calc(var(--dy) - 15px), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 35deg)) scale(1); } /* 미세 바운스 */
-                100% { transform: translate3d(calc(var(--dx) + 30px), var(--dy), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 40deg)) scale(1); } /* 미끄러지며 정지 */
+                0% { transform: translate3d(var(--sx), 100vh, -200px) rotateX(0deg) rotateZ(0deg) scale(0.5); }
+                40% { transform: translate3d(calc(var(--sx) + (var(--dx)*0.5)), -15vh, 400px) rotateX(1080deg) rotateZ(calc(var(--rz) * 2)) scale(1.4); } 
+                70% { transform: translate3d(var(--dx), var(--dy), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(var(--rz)) scale(1); } 
+                85% { transform: translate3d(calc(var(--dx) + 10px), calc(var(--dy) - 30px), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(calc(var(--rz) + 10deg)) scale(1); } 
+                100% { transform: translate3d(calc(var(--dx) + 15px), var(--dy), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(calc(var(--rz) + 15deg)) scale(1); } 
               }
               @keyframes textPop {
                 0% { opacity: 0; transform: scale(0.5) translateY(20px); }
-                70% { opacity: 1; transform: scale(1.1) translateY(-10px); }
                 100% { opacity: 1; transform: scale(1) translateY(0); }
               }
             `}</style>
@@ -737,18 +870,15 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
           </button>
         </div>
 
-        {/* Board Area (완벽히 깔끔한 1개의 네모 테두리 + 대각선 + 점) */}
+        {/* Board Area (가장 깔끔한 선과 점의 조합) */}
         <div className="flex-1 flex items-center justify-center min-h-[500px]">
-          {/* 바깥쪽 회색 사각형을 제거하고, 순수하게 선과 점으로만 이루어진 미니멀 보드 */}
           <div className="relative w-full max-w-[450px] aspect-square">
             
-            {/* 극도로 깔끔한 선 렌더링 */}
+            {/* 극도로 깔끔한 미니멀 선 (테두리와 대각선만 존재) */}
             <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-               {/* 외부 정사각형 테두리 */}
-               <rect x="0" y="0" width="100" height="100" fill="none" stroke="#9ca3af" strokeWidth="0.8" />
-               {/* 대각선 X 크로스 */}
-               <line x1="0" y1="0" x2="100" y2="100" stroke="#9ca3af" strokeWidth="0.8" />
-               <line x1="100" y1="0" x2="0" y2="100" stroke="#9ca3af" strokeWidth="0.8" />
+               <rect x="0" y="0" width="100" height="100" fill="none" stroke="#9ca3af" strokeWidth="0.5" />
+               <line x1="0" y1="0" x2="100" y2="100" stroke="#9ca3af" strokeWidth="0.5" />
+               <line x1="100" y1="0" x2="0" y2="100" stroke="#9ca3af" strokeWidth="0.5" />
             </svg>
             
             {/* 윷판의 점들 렌더링 */}
@@ -768,30 +898,26 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
 
               return (
                 <div key={`bg-${pos}`} 
-                  // 퍼센트 좌표의 중앙이 선과 완벽히 일치하도록 -translate 사용
                   className={`absolute rounded-full bg-white border border-gray-400 flex items-center justify-center transition-all shadow-sm transform -translate-x-1/2 -translate-y-1/2
-                    ${isCorner || isCenter ? 'w-8 h-8 border-2' : 'w-5 h-5'}
-                    ${isDestination ? 'ring-4 ring-amber-400 bg-amber-100 scale-125 z-0' : ''}
+                    ${isCorner || isCenter ? 'w-8 h-8 border-[2px]' : 'w-4 h-4'}
+                    ${isDestination ? 'ring-4 ring-amber-400 bg-amber-100 scale-150 z-0 border-amber-500' : ''}
                   `}
                   style={{ left: `${x}%`, top: `${y}%` }}
                 >
-                  {isCenter && <div className="w-2.5 h-2.5 bg-gray-400 rounded-full"></div>}
+                  {isCenter && <div className="w-3 h-3 bg-gray-400 rounded-full"></div>}
                 </div>
               )
             })}
 
-            {/* 실제 말(토큰) 렌더링 */}
             {renderPiecesOnBoard()}
             
-            {/* 출발지 라벨 */}
-            <div className="absolute -bottom-8 -right-8 text-gray-500 font-bold bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-200 text-xs">출발/도착</div>
+            <div className="absolute -bottom-10 -right-10 text-gray-500 font-bold bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-200 text-xs">출발 / 도착</div>
           </div>
         </div>
 
         {/* Bottom Controls */}
         <div className="h-48 bg-white mt-8 rounded-3xl shadow-sm border border-gray-200 p-6 flex gap-8">
           
-          {/* My Pieces Status */}
           <div className="flex-[0.8] flex flex-col justify-center gap-2 border-r border-gray-200 pr-8">
             <h3 className="font-bold text-gray-700 mb-2 flex items-center gap-2">
               내 대기 말
@@ -800,20 +926,19 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
             <div className="flex gap-4">
               {roomData.pieces[playingTeam].map(p => (
                 <div key={p.id} onClick={() => p.pos === 0 && handlePieceClick(playingTeam, p.id)}
-                  className={`relative cursor-pointer transition-transform w-12 h-12
+                  className={`relative cursor-pointer transition-transform w-12 h-16 flex items-end justify-center
                     ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:-translate-y-2'}
                     ${selectedPiece?.id === p.id ? 'scale-110 drop-shadow-xl' : ''}
                   `}
                 >
-                  {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute -inset-2 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
-                  <PremiumStone character={myChar} count={1} />
-                  {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-xl z-20 bg-white/80 rounded-full">완</div>}
+                  {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute bottom-0 w-12 h-12 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
+                  <ChessPiece3D character={myChar} count={1} />
+                  {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-xl z-20 bg-white/80 rounded-xl shadow-inner border border-green-200">완</div>}
                 </div>
               ))}
             </div>
           </div>
 
-          {/* Action Area (윷 던지기 & 큐 선택) */}
           <div className="flex-[1.2] flex flex-col justify-center items-center">
             {roomData.status === 'playing' ? (
               <>
@@ -857,7 +982,7 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
           <div className="p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2">게임 기록</div>
           <div className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col-reverse custom-scrollbar">
             {[...roomData.logs].reverse().map((log, idx) => (
-              <div key={idx} className="text-xs text-gray-600 bg-white p-3 rounded-lg shadow-sm border border-gray-100 font-medium">
+              <div key={idx} className="text-xs text-gray-600 bg-white p-3 rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
                 {log}
               </div>
             ))}
@@ -865,12 +990,6 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
         </div>
         <ChatBox db={db} appId={appId} roomId={roomId} myPlayerInfo={myPlayerInfo} messages={messages} characters={roomData.characters} />
       </div>
-      
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-      `}</style>
     </div>
   );
 }
