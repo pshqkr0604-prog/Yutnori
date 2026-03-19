@@ -56,14 +56,15 @@
     const MessageSquare = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>;
 
     // --- Firebase Initialization ---
-    // 🔴 [매우 중요] 깃허브 배포 시 본인의 파이어베이스 설정값으로 채워주셔야 통신이 됩니다!
+    // 🔴 [매우 중요] 전달받은 본인의 파이어베이스 설정값을 적용합니다.
     const fallbackConfig = {
-      apiKey: "여기에_API_KEY_입력",
-      authDomain: "여기에_AUTH_DOMAIN_입력",
-      projectId: "여기에_PROJECT_ID_입력",
-      storageBucket: "여기에_STORAGE_BUCKET_입력",
-      messagingSenderId: "여기에_MESSAGING_SENDER_ID_입력",
-      appId: "여기에_APP_ID_입력"
+      apiKey: "AIzaSyDPbR6XUdb2CR5G0WhLTWINPIpRGTq4VWc",
+      authDomain: "yutnori-8d609.firebaseapp.com",
+      projectId: "yutnori-8d609",
+      storageBucket: "yutnori-8d609.firebasestorage.app",
+      messagingSenderId: "189988756866",
+      appId: "1:189988756866:web:b24588cb77db9b8817039b",
+      measurementId: "G-TN86TP9Y20"
     };
     
     const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : fallbackConfig;
