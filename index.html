@@ -9,7 +9,7 @@ const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__f
 const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'yut-nori-app-v11';
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'yut-nori-app-v12';
 
 // --- Yut Board Logic ---
 const BOARD_GRAPH = {
@@ -111,7 +111,7 @@ function YutStick3D({ state, isMarked, startX, destX, destY, destRotZ, delay }) 
   }
 
   return (
-    // 3D 컨테이너. opacity 페이드 아웃이나 그림자를 이 레벨에 절대 넣지 마십시오. (평면화 원인)
+    // 3D 컨테이너. opacity 애니메이션이 없어야 브라우저 3D 평면화 버그가 생기지 않습니다.
     <div className="absolute origin-center"
          style={{
            width: `${R * 2}px`,
@@ -140,11 +140,11 @@ function YutStick3D({ state, isMarked, startX, destX, destY, destRotZ, delay }) 
           <div className="absolute w-full h-full bg-[#fde047] border-[3px] border-[#b45309] flex flex-col items-center justify-center"
                style={{ transform: 'rotateY(180deg) translateZ(0px)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
              <div className="absolute inset-0 opacity-10 bg-[repeating-linear-gradient(90deg,transparent,transparent_2px,#b45309_2px,#b45309_3px)]"></div>
-             {isMarked && (
+             {isMarked ? (
                <div className="text-4xl font-black text-red-600 transform -rotate-90 tracking-tighter z-10 drop-shadow-md whitespace-nowrap">
                  빽도!
                </div>
-             )}
+             ) : null}
           </div>
 
           {/* 3. 덮개 (상하단 반달형 캡) */}
@@ -790,15 +790,14 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
   const myChar = CHARACTERS[roomData.characters[playingTeam]];
 
   return (
-    <div className="flex h-screen bg-[#f3f4f6]">
+    <div className="flex h-screen overflow-hidden bg-[#f3f4f6]">
       
       {/* --- 완벽한 3D 반원통 윷가락 렌더링 (평면화 원천 차단) --- */}
       {isRolling && (
-        // overflow-hidden, opacity, filter 등의 속성을 이 래퍼에서 완전히 제거하여 3D 공간 보존
         <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
           <div className="absolute inset-0 bg-black/30"></div>
           
-          <div className="relative w-full h-full flex items-center justify-center perspective-[1500px]" style={{ perspective: '1500px' }}>
+          <div className="relative w-full h-full flex items-center justify-center" style={{ perspective: '1500px' }}>
             {[0, 1, 2, 3].map((i) => {
               const state = rollingResult?.states[i] || 0;
               const isMarked = (rollingResult?.key === '-1' && i === 0);
@@ -822,7 +821,6 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
               {rollingResult?.name}!!
             </h2>
 
-            {/* 공통 CSS 및 애니메이션 (투명도 애니메이션 제거로 평면화 방지) */}
             <style>{`
               .transform-style-3d { 
                 transform-style: preserve-3d; 
@@ -870,7 +868,7 @@ function GameView({ roomData, roomId, user, onLeave, db, appId }) {
           </button>
         </div>
 
-        {/* Board Area (가장 깔끔한 선과 점의 조합) */}
+        {/* Board Area */}
         <div className="flex-1 flex items-center justify-center min-h-[500px]">
           <div className="relative w-full max-w-[450px] aspect-square">
             
