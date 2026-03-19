@@ -1,0 +1,932 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, arrayUnion, query, orderBy, serverTimestamp, deleteDoc, addDoc } from 'firebase/firestore';
+import { Users, MessageSquare, Play, LogOut, CheckCircle2 } from 'lucide-react';
+
+// --- Firebase Initialization ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+const auth = app ? getAuth(app) : null;
+const db = app ? getFirestore(app) : null;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'yut-nori-app-v5';
+
+// --- Yut Board Logic ---
+const BOARD_GRAPH = {
+  1: [2], 2: [3], 3: [4], 4: [5], 5: [6, 21],
+  6: [7], 7: [8], 8: [9], 9: [10], 10: [11, 26],
+  11: [12], 12: [13], 13: [14], 14: [15], 15: [16],
+  16: [17], 17: [18], 18: [19], 19: [20], 20: [30],
+  21: [22], 22: [23], 23: [24, 28], 24: [25], 25: [15],
+  26: [27], 27: [23], 28: [29], 29: [20],
+};
+
+const BOARD_POSITIONS = {
+  1: { x: 100, y: 80 }, 2: { x: 100, y: 60 }, 3: { x: 100, y: 40 }, 4: { x: 100, y: 20 }, 5: { x: 100, y: 0 },
+  6: { x: 80, y: 0 }, 7: { x: 60, y: 0 }, 8: { x: 40, y: 0 }, 9: { x: 20, y: 0 }, 10: { x: 0, y: 0 },
+  11: { x: 0, y: 20 }, 12: { x: 0, y: 40 }, 13: { x: 0, y: 60 }, 14: { x: 0, y: 80 }, 15: { x: 0, y: 100 },
+  16: { x: 20, y: 100 }, 17: { x: 40, y: 100 }, 18: { x: 60, y: 100 }, 19: { x: 80, y: 100 }, 20: { x: 100, y: 100 },
+  21: { x: 80, y: 20 }, 22: { x: 60, y: 40 }, 23: { x: 50, y: 50 }, 24: { x: 40, y: 60 }, 25: { x: 20, y: 80 },
+  26: { x: 20, y: 20 }, 27: { x: 40, y: 40 }, 28: { x: 60, y: 60 }, 29: { x: 80, y: 80 }
+};
+
+// states: 1 = 평평한 배(UP), 0 = 둥근 등(UP)
+const YUT_RESULTS = {
+  '-1': { name: '빽도', steps: -1, states: [1, 0, 0, 0] }, 
+  '1': { name: '도', steps: 1, states: [0, 1, 0, 0] },
+  '2': { name: '개', steps: 2, states: [0, 1, 1, 0] },
+  '3': { name: '걸', steps: 3, states: [0, 1, 1, 1] },
+  '4': { name: '윷', steps: 4, states: [1, 1, 1, 1] },
+  '5': { name: '모', steps: 5, states: [0, 0, 0, 0] }
+};
+
+// 고급 장기알 스타일의 프리미엄 토큰 설정
+const CHARACTERS = {
+  '유비': { hanja: '劉', name: '유비', bg: 'from-[#166534] to-[#14532d]', shadowColor: '#052e16' },
+  '조조': { hanja: '曹', name: '조조', bg: 'from-[#1e3a8a] to-[#172554]', shadowColor: '#0f172a' },
+  '손권': { hanja: '孫', name: '손권', bg: 'from-[#991b1b] to-[#7f1d1d]', shadowColor: '#450a0a' }
+};
+
+// ==========================================
+// App Component
+// ==========================================
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [currentView, setCurrentView] = useState('lobby'); 
+  const [rooms, setRooms] = useState([]);
+  const [activeRoomId, setActiveRoomId] = useState(null);
+  const [roomData, setRoomData] = useState(null);
+  const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
+  
+  useEffect(() => {
+    if (!auth) return;
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
+        else await signInAnonymously(auth);
+      } catch (err) { console.error("Auth Error:", err); }
+    };
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, setUser);
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !db) return;
+    const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'yut_rooms');
+    const unsubscribe = onSnapshot(roomsRef, (snapshot) => {
+      setRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished'));
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !db || !activeRoomId) return;
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId);
+    const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setRoomData(data);
+        if (data.status === 'playing' && currentView !== 'game') setCurrentView('game');
+        else if (data.status === 'character_select' && currentView !== 'character_select') setCurrentView('character_select');
+        else if (data.status === 'lobby' && currentView !== 'room') setCurrentView('room');
+      } else {
+        setActiveRoomId(null);
+        setCurrentView('lobby');
+      }
+    });
+    return () => unsubscribe();
+  }, [user, activeRoomId, currentView]);
+
+  const createRoom = async () => {
+    if (!user) return;
+    const newRoomRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'yut_rooms'));
+    await setDoc(newRoomRef, {
+      name: `${playerName}의 방`,
+      hostId: user.uid,
+      status: 'lobby',
+      players: [{ uid: user.uid, name: playerName, team: 'A' }],
+      turn: 'A',
+      throwChances: 1, 
+      characters: { A: null, B: null },
+      yutQueue: [],
+      pieces: {
+        A: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ],
+        B: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ]
+      },
+      logs: ['게임 방이 생성되었습니다.']
+    });
+    setActiveRoomId(newRoomRef.id);
+  };
+
+  const joinRoom = async (roomId) => {
+    if (!user) return;
+    const room = rooms.find(r => r.id === roomId);
+    if (!room || room.players.length >= 6) return;
+    if (room.players.find(p => p.uid === user.uid)) { setActiveRoomId(roomId); return; }
+    
+    const assignedTeam = room.players.filter(p => p.team === 'A').length <= room.players.filter(p => p.team === 'B').length ? 'A' : 'B';
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+      players: arrayUnion({ uid: user.uid, name: playerName, team: assignedTeam }),
+      logs: arrayUnion(`${playerName}님이 입장했습니다.`)
+    });
+    setActiveRoomId(roomId);
+  };
+
+  const leaveRoom = async () => {
+    if (!user || !activeRoomId || !roomData) return;
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId);
+    const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
+    if (updatedPlayers.length === 0) await deleteDoc(roomRef);
+    else await updateDoc(roomRef, {
+      players: updatedPlayers,
+      hostId: roomData.hostId === user.uid ? updatedPlayers[0].uid : roomData.hostId,
+      logs: arrayUnion(`${playerName}님이 퇴장했습니다.`)
+    });
+    setActiveRoomId(null);
+    setCurrentView('lobby');
+  };
+
+  const addBot = async () => {
+    if (!user || !activeRoomId || !roomData || roomData.hostId !== user.uid || roomData.players.length >= 6) return;
+    const assignedTeam = roomData.players.filter(p => p.team === 'A').length <= roomData.players.filter(p => p.team === 'B').length ? 'A' : 'B';
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), {
+      players: arrayUnion({ uid: `bot_${Date.now()}`, name: `컴퓨터`, team: assignedTeam, isBot: true }),
+      logs: arrayUnion(`컴퓨터가 추가되었습니다.`)
+    });
+  };
+
+  const switchTeam = async () => {
+    if (!user || !activeRoomId || !roomData) return;
+    const updatedPlayers = roomData.players.map(p => p.uid === user.uid ? { ...p, team: p.team === 'A' ? 'B' : 'A' } : p);
+    if (updatedPlayers.filter(p => p.team === 'A').length > 3 || updatedPlayers.filter(p => p.team === 'B').length > 3) return;
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), { players: updatedPlayers });
+  };
+
+  const moveToCharacterSelect = async () => {
+    if (!user || !activeRoomId || !roomData || roomData.hostId !== user.uid) return;
+    if (roomData.players.filter(p => p.team === 'A').length === 0 || roomData.players.filter(p => p.team === 'B').length === 0) return alert("양 팀에 인원이 필요합니다.");
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), { status: 'character_select' });
+  };
+
+  if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans">접속 중...</div>;
+
+  return (
+    <div className="min-h-screen bg-gray-50 font-sans text-gray-800">
+      {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} />}
+      {currentView === 'room' && <WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} />}
+      {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={appId} />}
+      {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={appId} />}
+    </div>
+  );
+}
+
+// ==========================================
+// Views
+// ==========================================
+function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin }) {
+  return (
+    <div className="max-w-4xl mx-auto p-6 pt-20">
+      <div className="text-center mb-12">
+        <h1 className="text-5xl font-black text-gray-800 mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
+        <p className="text-gray-500 font-medium text-lg">친구들과 함께 즐기는 온라인 보드게임</p>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-gray-200 mb-8 max-w-md mx-auto shadow-sm">
+        <label className="block text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
+        <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={10}
+          className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all" />
+      </div>
+
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Play className="text-amber-500" /> 게임 방 목록</h2>
+        <button onClick={onCreate} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">방 만들기</button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {rooms.length === 0 ? (
+          <div className="col-span-full text-center py-16 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-300">현재 개설된 방이 없습니다. 직접 만들어보세요!</div>
+        ) : (
+          rooms.map(room => (
+            <div key={room.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:border-amber-400 transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <h3 className="font-bold text-lg text-gray-800 truncate pr-2">{room.name}</h3>
+                <span className={`text-xs px-2 py-1 rounded-md font-bold ${room.status !== 'lobby' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                  {room.status !== 'lobby' ? '게임중' : '대기중'}
+                </span>
+              </div>
+              <div className="flex items-center text-gray-500 text-sm mb-5"><Users size={16} className="mr-2" />인원: {room.players.length} / 6</div>
+              <button onClick={() => onJoin(room.id)} disabled={room.status !== 'lobby' || room.players.length >= 6}
+                className="w-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 font-bold py-2.5 rounded-lg transition-colors border border-gray-200">참가하기</button>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WaitingRoomView({ roomData, user, onSwitchTeam, onStart, onLeave, onAddBot }) {
+  if (!roomData) return null;
+  const teamA = roomData.players.filter(p => p.team === 'A');
+  const teamB = roomData.players.filter(p => p.team === 'B');
+  const isHost = roomData.hostId === user.uid;
+
+  return (
+    <div className="max-w-4xl mx-auto p-6 pt-12">
+      <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+        <div><h1 className="text-3xl font-black text-gray-800">{roomData.name}</h1><p className="text-gray-500 mt-1">대기실 (최대 3:3)</p></div>
+        <button onClick={onLeave} className="flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors"><LogOut size={18}/> 나가기</button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-blue-50/50 p-6 rounded-2xl border-t-4 border-blue-400 shadow-sm">
+          <div className="flex justify-between items-center mb-6 border-b border-blue-100 pb-3">
+            <h2 className="text-xl font-bold text-blue-800">팀 A</h2>
+            <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">{teamA.length}/3</span>
+          </div>
+          <div className="space-y-3">
+            {teamA.map(p => (
+              <div key={p.uid} className="bg-white p-3 rounded-xl border border-blue-100 flex items-center gap-3 shadow-sm">
+                <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">{p.name.charAt(0)}</div>
+                <span className="font-medium text-gray-800">{p.name} {p.uid === user.uid && <span className="text-blue-500 text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-lg">👑</span>}{p.isBot && <span className="ml-1 text-xl">🤖</span>}</span>
+              </div>
+            ))}
+            {teamA.length === 0 && <div className="text-blue-400 text-sm py-4 text-center border-2 border-dashed border-blue-200 rounded-xl">대기 중...</div>}
+          </div>
+        </div>
+
+        <div className="bg-red-50/50 p-6 rounded-2xl border-t-4 border-red-400 shadow-sm">
+          <div className="flex justify-between items-center mb-6 border-b border-red-100 pb-3">
+            <h2 className="text-xl font-bold text-red-800">팀 B</h2>
+            <span className="bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full">{teamB.length}/3</span>
+          </div>
+          <div className="space-y-3">
+            {teamB.map(p => (
+              <div key={p.uid} className="bg-white p-3 rounded-xl border border-red-100 flex items-center gap-3 shadow-sm">
+                <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold">{p.name.charAt(0)}</div>
+                <span className="font-medium text-gray-800">{p.name} {p.uid === user.uid && <span className="text-red-500 text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-lg">👑</span>}{p.isBot && <span className="ml-1 text-xl">🤖</span>}</span>
+              </div>
+            ))}
+            {teamB.length === 0 && <div className="text-red-400 text-sm py-4 text-center border-2 border-dashed border-red-200 rounded-xl">대기 중...</div>}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-4 justify-center">
+        <button onClick={onSwitchTeam} className="bg-white border border-gray-300 text-gray-700 px-8 py-4 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm">팀 바꾸기</button>
+        {isHost ? (
+          <div className="flex gap-4">
+            <button onClick={onAddBot} className="bg-purple-50 text-purple-700 border border-purple-200 px-8 py-4 rounded-xl font-bold hover:bg-purple-100 transition-all shadow-sm">컴퓨터 추가</button>
+            <button onClick={onStart} className="bg-amber-600 text-white px-12 py-4 rounded-xl font-black text-lg hover:bg-amber-700 transition-all shadow-md active:scale-95 border border-amber-700">말(캐릭터) 선택 및 시작</button>
+          </div>
+        ) : (<div className="bg-gray-100 text-gray-500 border border-gray-200 px-12 py-4 rounded-xl font-bold text-lg">방장의 시작을 대기 중...</div>)}
+      </div>
+    </div>
+  );
+}
+
+function CharacterSelectView({ roomData, roomId, user, db, appId }) {
+  const isHost = roomData.hostId === user.uid;
+  
+  const selectChar = async (team, charName) => {
+    if (!isHost) return;
+    const oppTeam = team === 'A' ? 'B' : 'A';
+    if (roomData.characters[oppTeam] === charName) return;
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+      [`characters.${team}`]: charName
+    });
+  };
+
+  const confirmSelection = async () => {
+    if (!isHost) return;
+    if (!roomData.characters.A || !roomData.characters.B) return alert("양 팀 모두 사용할 캐릭터를 선택해야 합니다.");
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+      status: 'playing', turn: 'A', throwChances: 1, logs: arrayUnion('게임이 시작되었습니다! 팀 A 선공.')
+    });
+  };
+
+  return (
+    <div className="h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+      <h1 className="text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
+      <p className="text-gray-500 mb-10">{isHost ? '각 팀에서 사용할 말을 선택해주세요 (중복 불가)' : '방장이 캐릭터를 선택 중입니다...'}</p>
+
+      <div className="flex gap-16 mb-16">
+        <div className="flex flex-col items-center">
+          <h2 className="text-xl font-bold text-blue-800 mb-6 bg-blue-100 px-8 py-2 rounded-full border border-blue-200 shadow-sm">팀 A</h2>
+          <div className="flex gap-6">
+            {Object.keys(CHARACTERS).map(charName => {
+              const char = CHARACTERS[charName];
+              const isSelectedByMe = roomData.characters.A === charName;
+              const disabled = roomData.characters.B === charName || !isHost;
+              return (
+                <div key={`A-${charName}`} onClick={() => !disabled && selectChar('A', charName)}
+                  className={`relative w-32 h-40 rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
+                    ${isSelectedByMe ? `scale-110 shadow-xl border-amber-400` : 'border-gray-200 hover:border-gray-400'}
+                    ${disabled && !isSelectedByMe ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+                  `}>
+                  {isSelectedByMe && <CheckCircle2 className="absolute top-2 right-2 text-amber-500" size={24}/>}
+                  <PremiumStone character={char} count={1} size="large" />
+                  <span className={`mt-5 font-bold ${isSelectedByMe ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="flex flex-col items-center">
+          <h2 className="text-xl font-bold text-red-800 mb-6 bg-red-100 px-8 py-2 rounded-full border border-red-200 shadow-sm">팀 B</h2>
+          <div className="flex gap-6">
+            {Object.keys(CHARACTERS).map(charName => {
+              const char = CHARACTERS[charName];
+              const isSelectedByMe = roomData.characters.B === charName;
+              const disabled = roomData.characters.A === charName || !isHost;
+              return (
+                <div key={`B-${charName}`} onClick={() => !disabled && selectChar('B', charName)}
+                  className={`relative w-32 h-40 rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
+                    ${isSelectedByMe ? `scale-110 shadow-xl border-amber-400` : 'border-gray-200 hover:border-gray-400'}
+                    ${disabled && !isSelectedByMe ? 'opacity-40 grayscale cursor-not-allowed' : ''}
+                  `}>
+                  {isSelectedByMe && <CheckCircle2 className="absolute top-2 right-2 text-amber-500" size={24}/>}
+                  <PremiumStone character={char} count={1} size="large" />
+                  <span className={`mt-5 font-bold ${isSelectedByMe ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      {isHost && (
+        <button onClick={confirmSelection} disabled={!roomData.characters.A || !roomData.characters.B}
+          className="bg-amber-600 text-white px-16 py-4 rounded-full font-black text-xl hover:bg-amber-700 disabled:opacity-50 transition-all shadow-lg border-2 border-amber-700">
+          게임 시작하기
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ==========================================
+// 3D Premium Stone Component (고급 장기알/마작패 느낌)
+// ==========================================
+function PremiumStone({ character, count, size = "normal" }) {
+  if (!character) return null;
+  const w = size === 'large' ? 'w-20' : 'w-12';
+  const h = size === 'large' ? 'h-20' : 'h-12';
+  const text = size === 'large' ? 'text-4xl' : 'text-xl';
+
+  return (
+    <div className={`${w} ${h} rounded-full bg-gradient-to-b ${character.bg} flex items-center justify-center relative transform transition-transform border border-white/20`}
+         style={{ boxShadow: `0 6px 0 ${character.shadowColor}, 0 10px 15px rgba(0,0,0,0.4)` }}>
+      
+      {/* 내부 테두리 음각 느낌 */}
+      <div className="absolute inset-[3px] rounded-full border border-white/30 pointer-events-none"></div>
+      <div className="absolute inset-[6px] rounded-full border border-black/20 pointer-events-none"></div>
+      
+      {/* 텍스트 (금박 느낌) */}
+      <span className={`font-black text-transparent bg-clip-text bg-gradient-to-b from-yellow-200 to-yellow-500 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] ${text}`}>
+        {character.hanja}
+      </span>
+      
+      {/* 광택 반사광 */}
+      <div className="absolute top-[5%] left-[15%] right-[15%] h-[30%] bg-gradient-to-b from-white/30 to-transparent rounded-full pointer-events-none"></div>
+
+      {/* 업기 뱃지 */}
+      {count > 1 && (
+        <div className="absolute -bottom-2 -right-2 bg-gradient-to-b from-yellow-300 to-yellow-500 text-yellow-900 font-black rounded-full w-6 h-6 flex items-center justify-center border-2 border-white shadow-lg text-[11px]">
+          x{count}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// Game View
+// ==========================================
+function GameView({ roomData, roomId, user, onLeave, db, appId }) {
+  const [selectedPiece, setSelectedPiece] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [isRolling, setIsRolling] = useState(false);
+  const [rollingResult, setRollingResult] = useState(null);
+  
+  const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
+  const myTeam = myPlayerInfo?.team;
+  const isHost = roomData.hostId === user.uid;
+
+  const isBotTurn = roomData.players.filter(p => p.team === roomData.turn).every(p => p.isBot);
+  // 실제 멀티플레이에서 핵심 권한 체크 (내 턴이거나, 봇 턴을 방장이 조작할 때만 true)
+  const isMyTurn = (roomData.turn === myTeam) || (isHost && isBotTurn);
+  const playingTeam = isMyTurn ? roomData.turn : (myTeam || 'A');
+
+  useEffect(() => {
+    if (!db || !roomId) return;
+    const chatRef = collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`);
+    const q = query(chatRef, orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse());
+    });
+    return () => unsubscribe();
+  }, [db, roomId, appId]);
+
+  // --- 턴 검증 ---
+  const checkTurnEnd = async (currentChances, currentQueue) => {
+    if (currentChances <= 0 && currentQueue.length === 0) {
+      const nextTurn = roomData.turn === 'A' ? 'B' : 'A';
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+        turn: nextTurn,
+        throwChances: 1, 
+        logs: arrayUnion(`[턴 종료] ${nextTurn === 'A' ? '팀 A' : '팀 B'}의 차례입니다.`)
+      });
+      return true;
+    }
+    return false;
+  };
+
+  const throwYut = async () => {
+    if (!isMyTurn || isRolling) return alert("당신의 차례가 아닙니다.");
+    if (roomData.throwChances <= 0) return alert("더 이상 윷을 던질 수 없습니다. 말을 이동하세요.");
+    
+    const myPieces = roomData.pieces[playingTeam];
+    const activePieces = myPieces.filter(p => p.pos !== 30);
+    if (activePieces.length === 0) return alert("모든 말이 완주했습니다!");
+
+    const rand = Math.floor(Math.random() * 16);
+    let resultKey = '2';
+    if (rand === 0) resultKey = '-1'; else if (rand <= 3) resultKey = '1'; else if (rand <= 9) resultKey = '2'; else if (rand <= 13) resultKey = '3'; else if (rand === 14) resultKey = '4'; else if (rand === 15) resultKey = '5';
+    
+    const result = YUT_RESULTS[resultKey];
+
+    setIsRolling(true);
+    setRollingResult({ key: resultKey, ...result });
+    
+    setTimeout(async () => {
+      setIsRolling(false);
+      setRollingResult(null);
+
+      const onBoardPieces = activePieces.filter(p => p.pos > 0 && p.pos < 30);
+      let newChances = roomData.throwChances - 1; 
+      if (resultKey === '4' || resultKey === '5') newChances += 1;
+
+      if (resultKey === '-1' && onBoardPieces.length === 0) {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+          throwChances: newChances,
+          logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 빽도! (판에 말이 없어 이동 불가)`)
+        });
+        await checkTurnEnd(newChances, roomData.yutQueue); 
+        return;
+      }
+
+      const newQueue = [...roomData.yutQueue, resultKey];
+      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+        yutQueue: newQueue,
+        throwChances: newChances,
+        logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`)
+      });
+
+      await checkTurnEnd(newChances, newQueue);
+
+    }, 2400); // 3D 물리 애니메이션 지속 시간 (조금 더 길게)
+  };
+
+  const calculateDestination = (startPos, steps) => {
+    if (steps === -1) {
+      if (startPos === 0) return 0;
+      if (startPos === 20) return 29;
+      if (startPos === 15) return 25;
+      return Math.max(0, startPos - 1);
+    }
+    let currentPos = startPos;
+    if (currentPos === 0) { currentPos = 1; steps--; }
+    for (let i = 0; i < steps; i++) {
+      if (currentPos === 30) break;
+      const node = BOARD_GRAPH[currentPos];
+      if (!node) break;
+      if (i === 0 && node.length > 1) currentPos = node[1]; else currentPos = node[0];
+    }
+    return currentPos;
+  };
+
+  const executeMove = async (pieceId, yutKey, queueIndex) => {
+    const steps = YUT_RESULTS[yutKey].steps;
+    const isBackDo = steps === -1;
+    
+    const myPieces = [...roomData.pieces[playingTeam]];
+    const targetPiece = myPieces.find(p => p.id === pieceId);
+    
+    if (isBackDo && targetPiece.pos === 0) return alert("대기 중인 말은 빽도로 이동할 수 없습니다.");
+
+    const startPos = targetPiece.pos;
+    const groupedPiecesIds = startPos > 0 ? myPieces.filter(p => p.pos === startPos).map(p => p.id) : [pieceId];
+    const destPos = calculateDestination(startPos, steps);
+
+    const updatedMyPieces = myPieces.map(p => {
+      if (groupedPiecesIds.includes(p.id)) return { ...p, pos: destPos };
+      return p;
+    });
+
+    let extraTurnFromCatch = false;
+    const oppTeam = playingTeam === 'A' ? 'B' : 'A';
+    let updatedOppPieces = [...roomData.pieces[oppTeam]];
+
+    if (destPos > 0 && destPos < 30) {
+      const caughtPieces = updatedOppPieces.filter(p => p.pos === destPos);
+      if (caughtPieces.length > 0) {
+        updatedOppPieces = updatedOppPieces.map(p => {
+          if (p.pos === destPos) return { ...p, pos: 0 };
+          return p;
+        });
+        extraTurnFromCatch = true;
+      }
+    }
+
+    const newQueue = [...roomData.yutQueue];
+    newQueue.splice(queueIndex, 1);
+
+    let newChances = roomData.throwChances;
+    let turnMsg = "";
+    
+    if (extraTurnFromCatch) {
+      newChances += 1; 
+      turnMsg = `상대 말을 잡았습니다! 한 번 더 던지세요.`;
+    }
+
+    const piecesUpdate = { [playingTeam]: updatedMyPieces, [oppTeam]: updatedOppPieces };
+    const isWin = updatedMyPieces.every(p => p.pos === 30);
+    
+    const updateData = {
+      pieces: piecesUpdate,
+      yutQueue: newQueue,
+      throwChances: newChances,
+      logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 말이 이동했습니다. ${turnMsg}`)
+    };
+
+    if (isWin) {
+      updateData.status = 'finished';
+      updateData.logs = arrayUnion(`🎉 ${playingTeam === 'A' ? '팀 A' : '팀 B'}가 승리했습니다! 게임 종료.`);
+    }
+
+    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), updateData);
+    setSelectedPiece(null);
+
+    if (!isWin) {
+      await checkTurnEnd(newChances, newQueue); 
+    }
+  };
+
+  const handlePieceClick = (team, id) => {
+    if (!isMyTurn || isRolling) return;
+    if (team !== playingTeam) return;
+    if (roomData.yutQueue.length === 0) return alert("사용할 수 있는 이동 횟수가 없습니다. 윷을 던지세요.");
+    setSelectedPiece(selectedPiece?.id === id ? null : { team, id });
+  };
+
+  const renderPiecesOnBoard = () => {
+    const allPieces = [...roomData.pieces.A.map(p=>({...p, team:'A'})), ...roomData.pieces.B.map(p=>({...p, team:'B'}))];
+    const elements = [];
+    const posGroups = {};
+    
+    allPieces.forEach(p => {
+      if (p.pos > 0 && p.pos < 30) {
+        if (!posGroups[p.pos]) posGroups[p.pos] = [];
+        posGroups[p.pos].push(p);
+      }
+    });
+
+    Object.keys(posGroups).forEach(pos => {
+      const posObj = BOARD_POSITIONS[pos];
+      if (!posObj) return;
+      const pieces = posGroups[pos];
+      const isSelected = selectedPiece && pieces.some(p => p.id === selectedPiece.id && p.team === selectedPiece.team);
+      const charConfig = CHARACTERS[roomData.characters[pieces[0].team]];
+
+      elements.push(
+        <div key={`pos-${pos}`} onClick={() => isMyTurn && pieces[0].team === playingTeam && handlePieceClick(pieces[0].team, pieces[0].id)}
+          className={`absolute flex items-center justify-center cursor-pointer transition-transform z-10 transform -translate-x-1/2 -translate-y-[60%]
+            ${isSelected ? 'scale-125 z-20' : 'hover:scale-110'}
+          `}
+          style={{ left: `${posObj.x}%`, top: `${posObj.y}%` }}
+        >
+          {isSelected && <div className="absolute -inset-2 bg-amber-400/50 rounded-full animate-ping blur-sm"></div>}
+          <PremiumStone character={charConfig} count={pieces.length} />
+        </div>
+      );
+    });
+
+    return elements;
+  };
+
+  const myChar = CHARACTERS[roomData.characters[playingTeam]];
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-gray-100">
+      
+      {/* --- 완벽한 리얼 3D 윷 던지기 (반원 형태의 물리 모션) --- */}
+      {isRolling && (
+        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center overflow-hidden">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] transition-opacity"></div>
+          
+          <div className="relative w-full h-full flex items-center justify-center perspective-[1500px]">
+            {[0, 1, 2, 3].map((i) => {
+              // 1 = 평면(배) 보임, 0 = 둥근면(등) 보임
+              const state = rollingResult?.states[i] || 0;
+              const isMarked = (rollingResult?.key === '-1' && i === 0);
+              
+              // 결과에 따라 최종 X축 회전 각도를 결정 (0deg = 평면 앞, 180deg = 둥근면 앞)
+              const finalRotX = state === 1 ? 0 : 180;
+              const startX = (i - 1.5) * 45; 
+              const destX = (i - 1.5) * 80 + (Math.random() * 40 - 20);
+              const destY = Math.random() * 60 - 30;
+              const destRotZ = Math.random() * 140 - 70;
+
+              return (
+                <div key={i} className="absolute w-[36px] h-[120px] origin-center"
+                  style={{
+                    animation: `yutToss 2.4s cubic-bezier(0.2, 0.8, 0.4, 1) forwards`,
+                    animationDelay: `${i * 0.05}s`,
+                    '--sx': `${startX}px`, '--dx': `${destX}px`, '--dy': `${destY}px`, '--rz': `${destRotZ}deg`, '--frx': `${finalRotX}deg`
+                  }}
+                >
+                   {/* 윷가락 3D 박스 객체 */}
+                   <div className="w-full h-full relative transform-style-3d shadow-2xl">
+                      
+                      {/* 평평한 면 (배) - 밝은 나무색 */}
+                      <div className="absolute inset-0 bg-[#fef08a] border-2 border-[#b45309] rounded-sm flex flex-col items-center justify-between py-4" 
+                           style={{ transform: 'translateZ(10px)', backfaceVisibility: 'hidden' }}>
+                         {isMarked ? (
+                           <div className="w-full h-full flex items-center justify-center text-5xl font-black text-red-600">X</div>
+                         ) : (
+                           <>
+                             <div className="w-2.5 h-2.5 rounded-full bg-[#b45309]/60"></div>
+                             <div className="w-2.5 h-2.5 rounded-full bg-[#b45309]/60"></div>
+                             <div className="w-2.5 h-2.5 rounded-full bg-[#b45309]/60"></div>
+                           </>
+                         )}
+                      </div>
+
+                      {/* 둥근 면 (등) - 입체감을 주는 그라데이션 */}
+                      <div className="absolute inset-0 bg-gradient-to-r from-[#381c00] via-[#92400e] to-[#381c00] border border-[#381c00]" 
+                           style={{ transform: 'rotateX(180deg) translateZ(10px)', backfaceVisibility: 'hidden' }}>
+                      </div>
+                      
+                      {/* 좌측면 */}
+                      <div className="absolute bg-[#78350f] border-y border-[#381c00]" style={{ width: '20px', height: '120px', transform: 'rotateY(-90deg) translateZ(18px)' }}></div>
+                      {/* 우측면 */}
+                      <div className="absolute bg-[#78350f] border-y border-[#381c00]" style={{ width: '20px', height: '120px', transform: 'rotateY(90deg) translateZ(18px)' }}></div>
+                      {/* 상단 캡 */}
+                      <div className="absolute bg-[#b45309]" style={{ width: '36px', height: '20px', transform: 'rotateX(90deg) translateZ(60px)' }}></div>
+                      {/* 하단 캡 */}
+                      <div className="absolute bg-[#b45309]" style={{ width: '36px', height: '20px', transform: 'rotateX(-90deg) translateZ(60px)' }}></div>
+
+                   </div>
+                </div>
+              );
+            })}
+            
+            <h2 className="absolute text-7xl font-black text-white drop-shadow-[0_4px_20px_rgba(0,0,0,0.8)] opacity-0 z-10"
+                style={{ animation: 'textPop 0.8s ease-out 1.7s forwards' }}>
+              {rollingResult?.name}!!
+            </h2>
+
+            {/* 마구잡이로 구르다가 바닥에 안착하는 물리 애니메이션 수학 */}
+            <style>{`
+              .transform-style-3d { transform-style: preserve-3d; }
+              @keyframes yutToss {
+                0% { transform: translate3d(var(--sx), 100vh, -100px) rotateX(0deg) rotateY(0deg) rotateZ(0deg) scale(0.6); }
+                30% { transform: translate3d(calc(var(--sx) + (var(--dx)*0.5)), -15vh, 400px) rotateX(1080deg) rotateY(360deg) rotateZ(calc(var(--rz) * 2)) scale(1.4); } /* 공중에서 비틀기 정점 */
+                60% { transform: translate3d(var(--dx), var(--dy), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(var(--rz)) scale(1); } /* 1차 바닥 터치 */
+                75% { transform: translate3d(calc(var(--dx) + 10px), calc(var(--dy) - 50px), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 15deg)) scale(1); } /* 크게 바운스 */
+                85% { transform: translate3d(calc(var(--dx) + 20px), var(--dy), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 30deg)) scale(1); } /* 2차 바닥 터치 */
+                93% { transform: translate3d(calc(var(--dx) + 25px), calc(var(--dy) - 15px), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 35deg)) scale(1); } /* 미세 바운스 */
+                100% { transform: translate3d(calc(var(--dx) + 30px), var(--dy), 0) rotateX(calc(1440deg + var(--frx))) rotateY(360deg) rotateZ(calc(var(--rz) + 40deg)) scale(1); } /* 미끄러지며 정지 */
+              }
+              @keyframes textPop {
+                0% { opacity: 0; transform: scale(0.5) translateY(20px); }
+                70% { opacity: 1; transform: scale(1.1) translateY(-10px); }
+                100% { opacity: 1; transform: scale(1) translateY(0); }
+              }
+            `}</style>
+          </div>
+        </div>
+      )}
+
+      {/* Left Area: Board & Controls */}
+      <div className="flex-1 flex flex-col p-6 relative max-w-5xl mx-auto">
+        
+        {/* Header */}
+        <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
+          <div>
+            <h2 className="text-2xl font-black text-gray-800">{roomData.name}</h2>
+            <div className="text-sm font-bold flex items-center gap-3 mt-1">
+              <span className="text-gray-500">상태:</span>
+              {roomData.status === 'finished' ? (
+                <span className="text-purple-600 bg-purple-100 px-3 py-1 rounded">게임 종료</span>
+              ) : (
+                <div className="flex items-center gap-2">
+                   <span className={`px-3 py-1 rounded text-white ${roomData.turn === 'A' ? 'bg-blue-600 shadow-sm' : 'bg-gray-400'}`}>팀 A</span>
+                   <span className="text-gray-400 font-black">VS</span>
+                   <span className={`px-3 py-1 rounded text-white ${roomData.turn === 'B' ? 'bg-red-600 shadow-sm' : 'bg-gray-400'}`}>팀 B</span>
+                   {isMyTurn && <span className="ml-2 animate-pulse text-amber-600 text-xs font-black border border-amber-400 px-2 py-0.5 rounded-full">내 차례!</span>}
+                </div>
+              )}
+            </div>
+          </div>
+          <button onClick={onLeave} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 font-bold px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors">
+            <LogOut size={16}/> 방 나가기
+          </button>
+        </div>
+
+        {/* Board Area (완벽히 깔끔한 1개의 네모 테두리 + 대각선 + 점) */}
+        <div className="flex-1 flex items-center justify-center min-h-[500px]">
+          {/* 바깥쪽 회색 사각형을 제거하고, 순수하게 선과 점으로만 이루어진 미니멀 보드 */}
+          <div className="relative w-full max-w-[450px] aspect-square">
+            
+            {/* 극도로 깔끔한 선 렌더링 */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+               {/* 외부 정사각형 테두리 */}
+               <rect x="0" y="0" width="100" height="100" fill="none" stroke="#9ca3af" strokeWidth="0.8" />
+               {/* 대각선 X 크로스 */}
+               <line x1="0" y1="0" x2="100" y2="100" stroke="#9ca3af" strokeWidth="0.8" />
+               <line x1="100" y1="0" x2="0" y2="100" stroke="#9ca3af" strokeWidth="0.8" />
+            </svg>
+            
+            {/* 윷판의 점들 렌더링 */}
+            {Object.keys(BOARD_POSITIONS).map(pos => {
+              const { x, y } = BOARD_POSITIONS[pos];
+              const isCorner = ['5', '10', '15', '20'].includes(pos);
+              const isCenter = pos === '23';
+              
+              let isDestination = false;
+              if (selectedPiece && roomData.yutQueue.length > 0) {
+                 const targetPiece = roomData.pieces[playingTeam].find(p => p.id === selectedPiece.id);
+                 if (targetPiece) {
+                    const predictedPos = calculateDestination(targetPiece.pos, YUT_RESULTS[roomData.yutQueue[0]].steps);
+                    if (predictedPos.toString() === pos) isDestination = true;
+                 }
+              }
+
+              return (
+                <div key={`bg-${pos}`} 
+                  // 퍼센트 좌표의 중앙이 선과 완벽히 일치하도록 -translate 사용
+                  className={`absolute rounded-full bg-white border border-gray-400 flex items-center justify-center transition-all shadow-sm transform -translate-x-1/2 -translate-y-1/2
+                    ${isCorner || isCenter ? 'w-8 h-8 border-2' : 'w-5 h-5'}
+                    ${isDestination ? 'ring-4 ring-amber-400 bg-amber-100 scale-125 z-0' : ''}
+                  `}
+                  style={{ left: `${x}%`, top: `${y}%` }}
+                >
+                  {isCenter && <div className="w-2.5 h-2.5 bg-gray-400 rounded-full"></div>}
+                </div>
+              )
+            })}
+
+            {/* 실제 말(토큰) 렌더링 */}
+            {renderPiecesOnBoard()}
+            
+            {/* 출발지 라벨 */}
+            <div className="absolute -bottom-8 -right-8 text-gray-500 font-bold bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-200 text-xs">출발/도착</div>
+          </div>
+        </div>
+
+        {/* Bottom Controls */}
+        <div className="h-48 bg-white mt-8 rounded-3xl shadow-sm border border-gray-200 p-6 flex gap-8">
+          
+          {/* My Pieces Status */}
+          <div className="flex-[0.8] flex flex-col justify-center gap-2 border-r border-gray-200 pr-8">
+            <h3 className="font-bold text-gray-700 mb-2 flex items-center gap-2">
+              내 대기 말
+              {isBotTurn && isMyTurn && <span className="text-purple-600 text-xs ml-2 font-bold bg-purple-100 px-2 py-0.5 rounded">컴퓨터 조작중</span>}
+            </h3>
+            <div className="flex gap-4">
+              {roomData.pieces[playingTeam].map(p => (
+                <div key={p.id} onClick={() => p.pos === 0 && handlePieceClick(playingTeam, p.id)}
+                  className={`relative cursor-pointer transition-transform w-12 h-12
+                    ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:-translate-y-2'}
+                    ${selectedPiece?.id === p.id ? 'scale-110 drop-shadow-xl' : ''}
+                  `}
+                >
+                  {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute -inset-2 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
+                  <PremiumStone character={myChar} count={1} />
+                  {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-xl z-20 bg-white/80 rounded-full">완</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Area (윷 던지기 & 큐 선택) */}
+          <div className="flex-[1.2] flex flex-col justify-center items-center">
+            {roomData.status === 'playing' ? (
+              <>
+                <div className="flex w-full gap-4 mb-4">
+                  <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling} 
+                    className="flex-1 bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-2xl py-4 rounded-2xl shadow-lg active:translate-y-1 transition-all relative overflow-hidden">
+                    {isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (남은 기회: ${roomData.throwChances})` : '말을 이동하세요') : '상대 턴 대기'}
+                  </button>
+                </div>
+                
+                <div className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 flex gap-3 min-h-[60px] items-center overflow-x-auto">
+                  {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-sm font-bold w-full text-center">적립된 이동 횟수가 없습니다</span>}
+                  
+                  {roomData.yutQueue.map((yutKey, idx) => {
+                    const res = YUT_RESULTS[yutKey];
+                    return (
+                      <button key={idx} onClick={() => selectedPiece && executeMove(selectedPiece.id, yutKey, idx)} disabled={!selectedPiece}
+                        className={`flex flex-col items-center justify-center min-w-[70px] h-14 rounded-lg font-black shadow-sm transition-all border-b-4 
+                          ${selectedPiece 
+                          ? 'bg-blue-500 hover:bg-blue-400 text-white border-blue-700 active:border-b-0 active:translate-y-1 cursor-pointer animate-pulse' 
+                          : 'bg-gray-200 text-gray-500 border-gray-300'}
+                        `}
+                      >
+                        <span className="text-lg leading-none">{res.name}</span>
+                        <span className="text-[10px]">{res.steps > 0 ? `+${res.steps}칸` : `${res.steps}칸`}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="text-4xl font-black text-gray-800 drop-shadow-sm">게임 종료!</div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Right Area: Chat & Logs */}
+      <div className="w-80 bg-white border-l border-gray-200 flex flex-col shadow-sm">
+        <div className="h-1/3 border-b border-gray-200 flex flex-col bg-gray-50">
+          <div className="p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2">게임 기록</div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 flex flex-col-reverse custom-scrollbar">
+            {[...roomData.logs].reverse().map((log, idx) => (
+              <div key={idx} className="text-xs text-gray-600 bg-white p-3 rounded-lg shadow-sm border border-gray-100 font-medium">
+                {log}
+              </div>
+            ))}
+          </div>
+        </div>
+        <ChatBox db={db} appId={appId} roomId={roomId} myPlayerInfo={myPlayerInfo} messages={messages} characters={roomData.characters} />
+      </div>
+      
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      `}</style>
+    </div>
+  );
+}
+
+// ==========================================
+// Chat Sub-component
+// ==========================================
+function ChatBox({ db, appId, roomId, myPlayerInfo, messages, characters }) {
+  const [input, setInput] = useState('');
+  const [chatMode, setChatMode] = useState('all');
+  const chatEndRef = useRef(null);
+
+  useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
+
+  const sendChat = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || !db) return;
+    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`), {
+      text: input, uid: myPlayerInfo.uid, name: myPlayerInfo.name, team: myPlayerInfo.team, mode: chatMode, createdAt: serverTimestamp()
+    });
+    setInput('');
+  };
+
+  const visibleMessages = messages.filter(m => m.mode === 'all' || m.team === myPlayerInfo.team);
+
+  return (
+    <div className="flex-1 flex flex-col bg-white">
+      <div className="p-3 border-b border-gray-200 flex justify-between items-center">
+        <span className="font-bold text-gray-700 text-sm flex items-center gap-2"><MessageSquare size={16}/> 채팅</span>
+        <div className="flex bg-gray-100 p-1 rounded-lg">
+          <button onClick={() => setChatMode('all')} className={`text-[10px] px-3 py-1.5 rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
+          <button onClick={() => setChatMode('team')} className={`text-[10px] px-3 py-1.5 rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
+        </div>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+        {visibleMessages.map(m => {
+          const isMe = m.uid === myPlayerInfo.uid;
+          const isTeamChat = m.mode === 'team';
+          const charName = characters?.[m.team] ? CHARACTERS[characters[m.team]].name : m.team;
+          return (
+            <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+              <span className="text-[10px] font-bold text-gray-400 mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
+              <div className={`px-4 py-2 rounded-2xl max-w-[85%] text-sm shadow-sm ${
+                isTeamChat ? 'bg-blue-600 text-white rounded-tr-sm' : (isMe ? 'bg-gray-800 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm')
+              }`}>{m.text}</div>
+            </div>
+          );
+        })}
+        <div ref={chatEndRef} />
+      </div>
+
+      <form onSubmit={sendChat} className="p-4 border-t border-gray-200 bg-gray-50">
+        <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={chatMode === 'all' ? "전체 메시지..." : "팀원에게만 보이는 메시지..."}
+          className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-sm text-gray-800 transition-all shadow-sm" />
+      </form>
+    </div>
+  );
+}
