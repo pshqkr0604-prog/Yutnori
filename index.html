@@ -208,6 +208,7 @@
     // ==========================================
     function App() {
       const [user, setUser] = useState(null);
+      const [authError, setAuthError] = useState(null); // 에러 상태 추가
       const [currentView, setCurrentView] = useState('lobby'); 
       const [rooms, setRooms] = useState([]);
       const [activeRoomId, setActiveRoomId] = useState(null);
@@ -216,14 +217,17 @@
       
       useEffect(() => {
         if (!auth) {
-          alert("⚠️ [오류] Firebase 설정이 누락되었습니다!\nHTML 코드 내부의 fallbackConfig에 본인의 파이어베이스 API 키를 입력하셔야 깃허브에서 정상 작동합니다.");
+          setAuthError("⚠️ [오류] Firebase 설정이 누락되었습니다!\nHTML 코드 내부의 fallbackConfig에 본인의 파이어베이스 API 키를 입력하셔야 깃허브에서 정상 작동합니다.");
           return;
         }
         const initAuth = async () => {
           try {
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
             else await signInAnonymously(auth);
-          } catch (err) { console.error("Auth Error:", err); }
+          } catch (err) { 
+            console.error("Auth Error:", err); 
+            setAuthError(err.message); // 화면에 에러 표시
+          }
         };
         initAuth();
         const unsubscribe = onAuthStateChanged(auth, setUser);
@@ -330,7 +334,21 @@
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), { status: 'character_select' });
       };
 
-      if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans">접속 중...</div>;
+      // 에러가 났을 때 무한 '접속 중' 대신 에러 화면 출력
+      if (authError) return (
+        <div className="flex h-screen flex-col items-center justify-center bg-gray-100 font-sans p-6 text-center">
+          <div className="bg-white p-8 rounded-2xl shadow-xl border-2 border-red-500 max-w-lg">
+            <h1 className="text-2xl font-black text-red-600 mb-4">접속 실패</h1>
+            <p className="text-gray-700 bg-gray-100 p-4 rounded-lg break-words mb-6 font-mono text-sm">{authError}</p>
+            <p className="text-gray-600 font-bold mb-2">💡 해결 방법:</p>
+            <ol className="text-left text-gray-500 text-sm space-y-2 list-decimal list-inside">
+              <li>파이어베이스 콘솔의 <b>Authentication(인증) &gt; Sign-in method</b>에서 <b>'익명(Anonymous)'</b> 로그인이 켜져 있는지 확인하세요.</li>
+              <li><b>Authentication(인증) &gt; Settings &gt; 승인된 도메인</b>에 질문자님의 <b>깃허브 주소(예: 본인아이디.github.io)</b>를 추가하세요.</li>
+            </ol>
+          </div>
+        </div>
+      );
+      if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버와 통신 중입니다...</div>;
 
       return (
         <div className="min-h-screen bg-[#f3f4f6] font-sans text-gray-800">
