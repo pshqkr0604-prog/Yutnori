@@ -51,7 +51,7 @@
     import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
     import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+    import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
     import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, arrayUnion, query, orderBy, serverTimestamp, deleteDoc, addDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
     // --- Lucide 아이콘 대체용 인라인 SVG 컴포넌트 ---
@@ -60,6 +60,7 @@
     const LogOut = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>;
     const CheckCircle2 = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="16 8 10 14 8 12"></polyline></svg>;
     const MessageSquare = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>;
+    const Trash2 = ({ size=16, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>;
 
     // ==========================================
     // Firebase Initialization (캔버스 변수 원천 차단, 무조건 사용자 DB만 사용)
@@ -78,8 +79,8 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // 데이터베이스 방 목록 저장 폴더명
-    const GLOBAL_APP_ID = 'yutnori_live_match_final_v2'; 
+    // 데이터베이스 방 목록 저장 폴더명 (초기화를 위해 v3로 변경)
+    const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
 
     // --- Yut Board Logic ---
     const BOARD_GRAPH = {
@@ -115,32 +116,101 @@
       '손권': { hanja: '孫', name: '손권', bgDark: '#7f1d1d', bgLight: '#ef4444' }
     };
 
+    // ==========================================
+    // Auth View (로그인 / 회원가입)
+    // ==========================================
+    function AuthView({ auth, setAuthError }) {
+      const [isLogin, setIsLogin] = useState(true);
+      const [id, setId] = useState('');
+      const [password, setPassword] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!id || !password) return alert("아이디와 비밀번호를 모두 입력해주세요.");
+        if (password.length < 6) return alert("비밀번호는 6자리 이상이어야 합니다.");
+        
+        setLoading(true);
+        const email = `${id}@yutnori.game`; // 아이디를 이메일 형식으로 변환하여 사용
+        
+        try {
+          if (isLogin) {
+            await signInWithEmailAndPassword(auth, email, password);
+          } else {
+            await createUserWithEmailAndPassword(auth, email, password);
+            alert("회원가입이 완료되었습니다. 자동으로 로그인됩니다.");
+          }
+        } catch (error) {
+          console.error(error);
+          if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+             alert("아이디 또는 비밀번호가 일치하지 않습니다.");
+          } else if (error.code === 'auth/email-already-in-use') {
+             alert("이미 사용중인 아이디입니다.");
+          } else {
+             setAuthError(error.message);
+          }
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div className="h-screen flex items-center justify-center bg-[#f3f4f6] p-4 md:p-6">
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-200">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2 text-center tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
+            <p className="text-gray-500 text-sm md:text-base text-center mb-6 md:mb-8 font-medium">아이디와 비밀번호로 접속하세요</p>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">아이디</label>
+                <input type="text" value={id} onChange={(e) => setId(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))} maxLength={20}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" placeholder="영문/숫자 아이디 입력" />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">비밀번호</label>
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" placeholder="비밀번호 (6자리 이상)" />
+              </div>
+              <button type="submit" disabled={loading}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black text-base md:text-lg py-3 md:py-4 rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50 mt-4">
+                {loading ? "처리중..." : (isLogin ? "로그인" : "회원가입")}
+              </button>
+            </form>
+            <div className="mt-6 text-center">
+              <button onClick={() => setIsLogin(!isLogin)} className="text-gray-500 font-bold hover:text-amber-600 transition-colors text-xs md:text-sm underline underline-offset-4">
+                {isLogin ? "아이디가 없으신가요? 회원가입하기" : "이미 계정이 있으신가요? 로그인하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function ChessPiece3D({ character, count, size = "normal" }) {
       if (!character) return null;
       const isLarge = size === 'large';
-      const scaleClass = isLarge ? 'scale-[1.8] origin-bottom' : 'scale-110 origin-bottom';
+      const scaleClass = isLarge ? 'scale-[1.5] md:scale-[1.8] origin-bottom' : 'scale-100 md:scale-110 origin-bottom';
 
       return (
-        <div className={`relative flex flex-col items-center justify-end w-10 h-16 pointer-events-none filter drop-shadow-[0_5px_5px_rgba(0,0,0,0.4)] transform ${scaleClass}`}>
+        <div className={`relative flex flex-col items-center justify-end w-8 md:w-10 h-12 md:h-16 pointer-events-none filter drop-shadow-[0_5px_5px_rgba(0,0,0,0.4)] transform ${scaleClass}`}>
           <div className="relative z-20 flex flex-col items-center mb-[-4px]">
-            <div className="w-6 h-3 rounded-t-md border border-black/40 shadow-inner" style={{ background: character.bgLight }}></div>
-            <div className="w-5 h-5 bg-[#fcd34d] rounded-full border border-[#b45309] flex items-center justify-center z-10 shadow-sm">
-              <div className="flex gap-1 mt-1">
+            <div className="w-5 md:w-6 h-2 md:h-3 rounded-t-md border border-black/40 shadow-inner" style={{ background: character.bgLight }}></div>
+            <div className="w-4 md:w-5 h-4 md:h-5 bg-[#fcd34d] rounded-full border border-[#b45309] flex items-center justify-center z-10 shadow-sm">
+              <div className="flex gap-0.5 md:gap-1 mt-0.5 md:mt-1">
                 <div className="w-1 h-1 bg-black rounded-full"></div>
                 <div className="w-1 h-1 bg-black rounded-full"></div>
               </div>
             </div>
           </div>
-          <div className="relative z-10 w-8 h-8 rounded-t-xl border-x border-t border-black/40 shadow-inner flex flex-col items-center justify-end pb-1"
+          <div className="relative z-10 w-6 md:w-8 h-6 md:h-8 rounded-t-xl border-x border-t border-black/40 shadow-inner flex flex-col items-center justify-end pb-1"
                style={{ background: `linear-gradient(to bottom, ${character.bgLight}, ${character.bgDark})` }}>
-            <span className="text-[9px] font-black text-white/90 drop-shadow-md">{character.hanja}</span>
+            <span className="text-[7px] md:text-[9px] font-black text-white/90 drop-shadow-md">{character.hanja}</span>
           </div>
           <div className="relative z-0 flex flex-col items-center w-full">
-            <div className="w-9 h-2.5 rounded-[50%] bg-[#475569] border border-[#1e293b] -mb-1 shadow-inner"></div>
-            <div className="w-11 h-3.5 rounded-[50%] bg-[#1e293b] border-2 border-black shadow-[0_3px_5px_rgba(0,0,0,0.6)]"></div>
+            <div className="w-7 md:w-9 h-2 md:h-2.5 rounded-[50%] bg-[#475569] border border-[#1e293b] -mb-1 shadow-inner"></div>
+            <div className="w-9 md:w-11 h-2.5 md:h-3.5 rounded-[50%] bg-[#1e293b] border-2 border-black shadow-[0_3px_5px_rgba(0,0,0,0.6)]"></div>
           </div>
           {count > 1 && (
-            <div className="absolute -bottom-1 -right-3 z-30 bg-gradient-to-br from-yellow-300 to-yellow-600 text-yellow-950 font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+            <div className="absolute -bottom-1 -right-2 md:-right-3 z-30 bg-gradient-to-br from-yellow-300 to-yellow-600 text-yellow-950 font-black text-[8px] md:text-[10px] w-4 md:w-5 h-4 md:h-5 rounded-full flex items-center justify-center border border-white shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
               x{count}
             </div>
           )}
@@ -171,7 +241,7 @@
       }
 
       return (
-        <div className="absolute origin-center transform-style-3d"
+        <div className="absolute origin-center transform-style-3d scale-75 md:scale-100"
              style={{
                width: `${R * 2}px`, height: `${length}px`,
                animation: `yutToss 1.2s cubic-bezier(0.2, 0.8, 0.4, 1) forwards`,
@@ -182,16 +252,16 @@
               {faces}
               <div className="absolute w-full h-full flex flex-col items-center justify-evenly py-4"
                    style={{ transform: `translateZ(${R + 1}px)`, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
-                 <span className="font-black text-[#290f01] opacity-70 text-2xl transform scale-x-150">X</span>
-                 <span className="font-black text-[#290f01] opacity-70 text-2xl transform scale-x-150">X</span>
-                 <span className="font-black text-[#290f01] opacity-70 text-xl transform scale-x-150">X</span>
-                 <span className="font-black text-[#290f01] opacity-70 text-xl transform scale-x-150">X</span>
+                 <span className="font-black text-[#290f01] opacity-70 text-xl md:text-2xl transform scale-x-150">X</span>
+                 <span className="font-black text-[#290f01] opacity-70 text-xl md:text-2xl transform scale-x-150">X</span>
+                 <span className="font-black text-[#290f01] opacity-70 text-lg md:text-xl transform scale-x-150">X</span>
+                 <span className="font-black text-[#290f01] opacity-70 text-lg md:text-xl transform scale-x-150">X</span>
               </div>
               <div className="absolute w-full h-full bg-[#fde047] border-[3px] border-[#b45309] flex flex-col items-center justify-center overflow-hidden shadow-[inset_0_0_10px_rgba(180,83,9,0.3)]"
                    style={{ transform: 'rotateY(180deg) translateZ(0px)', backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
                  <div className="absolute inset-0 opacity-10 bg-[repeating-linear-gradient(90deg,transparent,transparent_2px,#b45309_2px,#b45309_3px)]"></div>
                  {isMarked ? (
-                   <div className="text-4xl font-black text-red-600 transform -rotate-90 tracking-tighter z-10 drop-shadow-md whitespace-nowrap">빽도!</div>
+                   <div className="text-3xl md:text-4xl font-black text-red-600 transform -rotate-90 tracking-tighter z-10 drop-shadow-md whitespace-nowrap">빽도!</div>
                  ) : null}
               </div>
               <div className="absolute bg-[#5c2305] border-[#381c00]"
@@ -209,28 +279,28 @@
     function App() {
       const [user, setUser] = useState(null);
       const [authError, setAuthError] = useState(null); 
-      const [currentView, setCurrentView] = useState('lobby'); 
+      const [currentView, setCurrentView] = useState('auth'); 
       const [rooms, setRooms] = useState([]);
       const [activeRoomId, setActiveRoomId] = useState(null);
       const [roomData, setRoomData] = useState(null);
       const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
       
-      // 사용자 인증
+      // 사용자 인증 상태 추적
       useEffect(() => {
-        const initAuth = async () => {
-          try {
-            await signInAnonymously(auth);
-          } catch (err) { 
-            console.error("Auth Error:", err); 
-            setAuthError("파이어베이스 인증 에러 (익명 로그인을 켜주세요!): " + err.message); 
+        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+          setUser(currentUser);
+          if (currentUser) {
+             setCurrentView(prev => prev === 'auth' ? 'lobby' : prev);
+          } else {
+             setCurrentView('auth');
+             setActiveRoomId(null);
+             setRoomData(null);
           }
-        };
-        initAuth();
-        const unsubscribe = onAuthStateChanged(auth, setUser);
+        });
         return () => unsubscribe();
       }, []);
 
-      // 방 목록 불러오기
+      // 방 목록 불러오기 (오류 메시지 명확화)
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -263,7 +333,7 @@
         return () => unsubscribe();
       }, [user, activeRoomId, currentView]);
 
-      // 방 만들기 (준비 상태(ready) 추가)
+      // 방 만들기
       const createRoom = async () => {
         if (!user) return;
         try {
@@ -324,6 +394,17 @@
         setCurrentView('lobby');
       };
 
+      // 방 삭제 함수
+      const deleteRoom = async (roomId) => {
+        if (!user) return;
+        if (!confirm("정말 이 방을 삭제하시겠습니까? (방장 권한)")) return;
+        try {
+          await deleteDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId));
+        } catch (error) {
+          alert("방 삭제 실패:\n" + error.message);
+        }
+      };
+
       const addBot = async () => {
         if (!user || !activeRoomId || !roomData || roomData.hostId !== user.uid || roomData.players.length >= 6) return;
         const assignedTeam = roomData.players.filter(p => p.team === 'A').length <= roomData.players.filter(p => p.team === 'B').length ? 'A' : 'B';
@@ -353,17 +434,18 @@
             <p className="text-gray-700 bg-gray-100 p-4 rounded-lg break-words mb-6 font-mono text-sm">{authError}</p>
             <p className="text-gray-600 font-bold mb-2">💡 해결 방법:</p>
             <ol className="text-left text-gray-500 text-sm space-y-2 list-decimal list-inside">
-              <li>파이어베이스 콘솔의 <b>Authentication(인증) &gt; Sign-in method</b>에서 <b>'익명(Anonymous)'</b> 로그인이 켜져 있는지 확인하세요.</li>
+              <li>파이어베이스 콘솔의 <b>Authentication(인증) &gt; Sign-in method</b>에서 <b>'이메일/비밀번호'</b> 로그인이 켜져 있는지 확인하세요.</li>
               <li><b>Firestore Database &gt; 규칙(Rules)</b>이 올바르게 저장되었는지 확인하세요.</li>
             </ol>
           </div>
         </div>
       );
-      if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버 연결 중...</div>;
+      if (!user && currentView !== 'auth') return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버 연결 중...</div>;
 
       return (
         <div className="min-h-screen bg-[#f3f4f6] font-sans text-gray-800">
-          {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} />}
+          {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
+          {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} />}
           {currentView === 'room' && <WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} />}
           {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
           {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
@@ -375,37 +457,51 @@
     // ==========================================
     // Lobby View
     // ==========================================
-    function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin }) {
+    function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin, user, onDelete, auth }) {
+      const handleLogout = async () => {
+         if(confirm("로그아웃 하시겠습니까?")) {
+           await signOut(auth);
+         }
+      }
+
       return (
-        <div className="max-w-4xl mx-auto p-6 pt-20">
-          <div className="text-center mb-12">
-            <h1 className="text-5xl font-black text-gray-800 mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
-            <p className="text-gray-500 font-medium text-lg">가장 리얼한 온라인 윷놀이 보드게임</p>
+        <div className="max-w-4xl mx-auto p-4 md:p-6 pt-10 md:pt-20 relative">
+          <button onClick={handleLogout} className="absolute top-4 right-4 md:top-6 md:right-6 flex items-center gap-1 md:gap-2 text-gray-500 hover:text-red-600 font-bold px-2 py-1.5 md:px-3 md:py-2 rounded-lg bg-white border border-gray-200 shadow-sm transition-colors text-xs md:text-sm">
+            <LogOut size={14} className="md:w-4 md:h-4"/> 로그아웃
+          </button>
+          <div className="text-center mb-8 md:mb-12 mt-8 md:mt-0">
+            <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
+            <p className="text-gray-500 font-medium text-sm md:text-lg">가장 리얼한 온라인 윷놀이 보드게임</p>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-gray-200 mb-8 max-w-md mx-auto shadow-sm">
-            <label className="block text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
+          <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 mb-6 md:mb-8 max-w-md mx-auto shadow-sm">
+            <label className="block text-xs md:text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
             <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={10}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all" />
+              className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-50 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" />
           </div>
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2"><Play className="text-amber-500" /> 게임 방 목록</h2>
-            <button onClick={onCreate} className="bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95">방 만들기</button>
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-4 md:mb-6 gap-4">
+            <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2 w-full sm:w-auto"><Play className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /> 게임 방 목록</h2>
+            <button onClick={onCreate} className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg md:rounded-xl font-bold shadow-md transition-all active:scale-95 text-sm md:text-base">방 만들기</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
             {rooms.length === 0 ? (
-              <div className="col-span-full text-center py-16 text-gray-400 bg-white rounded-2xl border border-dashed border-gray-300">현재 개설된 방이 없습니다. 직접 만들어보세요!</div>
+              <div className="col-span-full text-center py-12 md:py-16 text-gray-400 bg-white rounded-xl md:rounded-2xl border border-dashed border-gray-300 text-sm md:text-base">현재 개설된 방이 없습니다. 직접 만들어보세요!</div>
             ) : (
               rooms.map(room => (
-                <div key={room.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 hover:border-amber-400 transition-all">
-                  <div className="flex justify-between items-start mb-4">
-                    <h3 className="font-bold text-lg text-gray-800 truncate pr-2">{room.name}</h3>
-                    <span className={`text-xs px-2 py-1 rounded-md font-bold ${room.status !== 'lobby' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                <div key={room.id} className="bg-white p-4 md:p-5 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 hover:border-amber-400 transition-all relative group">
+                  {user && room.hostId === user.uid && (
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(room.id); }} className="absolute top-3 right-3 md:top-4 md:right-4 text-gray-400 hover:text-red-500 transition-colors" title="방 삭제">
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                  <div className="flex justify-between items-start mb-3 md:mb-4 pr-6">
+                    <h3 className="font-bold text-base md:text-lg text-gray-800 truncate">{room.name}</h3>
+                    <span className={`text-[10px] md:text-xs px-2 py-1 rounded-md font-bold flex-shrink-0 ${room.status !== 'lobby' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
                       {room.status !== 'lobby' ? '게임중' : '대기중'}
                     </span>
                   </div>
-                  <div className="flex items-center text-gray-500 text-sm mb-5"><UsersIcon size={16} className="mr-2" />인원: {room.players.length} / 6</div>
+                  <div className="flex items-center text-gray-500 text-xs md:text-sm mb-4 md:mb-5"><UsersIcon size={14} className="mr-1 md:mr-2 md:w-4 md:h-4" />인원: {room.players.length} / 6</div>
                   <button onClick={() => onJoin(room.id)} disabled={room.status !== 'lobby' || room.players.length >= 6}
-                    className="w-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 font-bold py-2.5 rounded-lg transition-colors border border-gray-200">참가하기</button>
+                    className="w-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 font-bold py-2 md:py-2.5 rounded-md md:rounded-lg transition-colors border border-gray-200 text-sm md:text-base">참가하기</button>
                 </div>
               ))
             )}
@@ -424,58 +520,58 @@
       const isHost = roomData.hostId === user.uid;
 
       return (
-        <div className="max-w-4xl mx-auto p-6 pt-12">
-          <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-            <div><h1 className="text-3xl font-black text-gray-800">{roomData.name}</h1><p className="text-gray-500 mt-1">대기실 (최대 3:3)</p></div>
-            <button onClick={onLeave} className="flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors"><LogOut size={18}/> 나가기</button>
+        <div className="max-w-4xl mx-auto p-4 md:p-6 pt-6 md:pt-12">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 bg-white p-4 md:p-6 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 gap-4 sm:gap-0">
+            <div><h1 className="text-2xl md:text-3xl font-black text-gray-800">{roomData.name}</h1><p className="text-gray-500 mt-1 text-sm md:text-base">대기실 (최대 3:3)</p></div>
+            <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors text-sm md:text-base w-full sm:w-auto justify-center sm:justify-start border border-gray-200 sm:border-none"><LogOut size={16} className="md:w-[18px] md:h-[18px]"/> 나가기</button>
           </div>
-          <div className="grid md:grid-cols-2 gap-6 mb-8">
-            <div className="bg-blue-50/50 p-6 rounded-2xl border-t-4 border-blue-400 shadow-sm">
-              <div className="flex justify-between items-center mb-6 border-b border-blue-100 pb-3">
-                <h2 className="text-xl font-bold text-blue-800">팀 A</h2>
-                <span className="bg-blue-100 text-blue-800 text-xs font-bold px-3 py-1 rounded-full">{teamA.length}/3</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+            <div className="bg-blue-50/50 p-4 md:p-6 rounded-xl md:rounded-2xl border-t-4 border-blue-400 shadow-sm">
+              <div className="flex justify-between items-center mb-4 md:mb-6 border-b border-blue-100 pb-2 md:pb-3">
+                <h2 className="text-lg md:text-xl font-bold text-blue-800">팀 A</h2>
+                <span className="bg-blue-100 text-blue-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamA.length}/3</span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 md:space-y-3">
                 {teamA.map(p => (
-                  <div key={p.uid} className="bg-white p-3 rounded-xl border border-blue-100 flex items-center gap-3 shadow-sm">
-                    <div className="w-10 h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">{p.name.charAt(0)}</div>
-                    <span className="font-medium text-gray-800">{p.name} {p.uid === user.uid && <span className="text-blue-500 text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-lg">👑</span>}{p.isBot && <span className="ml-1 text-xl">🤖</span>}</span>
+                  <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-blue-100 flex items-center gap-2 md:gap-3 shadow-sm">
+                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm md:text-base">{p.name.charAt(0)}</div>
+                    <span className="font-medium text-gray-800 text-sm md:text-base truncate">{p.name} {p.uid === user.uid && <span className="text-blue-500 text-xs md:text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl">🤖</span>}</span>
                   </div>
                 ))}
-                {teamA.length === 0 && <div className="text-blue-400 text-sm py-4 text-center border-2 border-dashed border-blue-200 rounded-xl">대기 중...</div>}
+                {teamA.length === 0 && <div className="text-blue-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-blue-200 rounded-lg md:rounded-xl">대기 중...</div>}
               </div>
             </div>
-            <div className="bg-red-50/50 p-6 rounded-2xl border-t-4 border-red-400 shadow-sm">
-              <div className="flex justify-between items-center mb-6 border-b border-red-100 pb-3">
-                <h2 className="text-xl font-bold text-red-800">팀 B</h2>
-                <span className="bg-red-100 text-red-800 text-xs font-bold px-3 py-1 rounded-full">{teamB.length}/3</span>
+            <div className="bg-red-50/50 p-4 md:p-6 rounded-xl md:rounded-2xl border-t-4 border-red-400 shadow-sm">
+              <div className="flex justify-between items-center mb-4 md:mb-6 border-b border-red-100 pb-2 md:pb-3">
+                <h2 className="text-lg md:text-xl font-bold text-red-800">팀 B</h2>
+                <span className="bg-red-100 text-red-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamB.length}/3</span>
               </div>
-              <div className="space-y-3">
+              <div className="space-y-2 md:space-y-3">
                 {teamB.map(p => (
-                  <div key={p.uid} className="bg-white p-3 rounded-xl border border-red-100 flex items-center gap-3 shadow-sm">
-                    <div className="w-10 h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold">{p.name.charAt(0)}</div>
-                    <span className="font-medium text-gray-800">{p.name} {p.uid === user.uid && <span className="text-red-500 text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-lg">👑</span>}{p.isBot && <span className="ml-1 text-xl">🤖</span>}</span>
+                  <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-red-100 flex items-center gap-2 md:gap-3 shadow-sm">
+                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm md:text-base">{p.name.charAt(0)}</div>
+                    <span className="font-medium text-gray-800 text-sm md:text-base truncate">{p.name} {p.uid === user.uid && <span className="text-red-500 text-xs md:text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl">🤖</span>}</span>
                   </div>
                 ))}
-                {teamB.length === 0 && <div className="text-red-400 text-sm py-4 text-center border-2 border-dashed border-red-200 rounded-xl">대기 중...</div>}
+                {teamB.length === 0 && <div className="text-red-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-red-200 rounded-lg md:rounded-xl">대기 중...</div>}
               </div>
             </div>
           </div>
-          <div className="flex gap-4 justify-center">
-            <button onClick={onSwitchTeam} className="bg-white border border-gray-300 text-gray-700 px-8 py-4 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm">팀 바꾸기</button>
+          <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center">
+            <button onClick={onSwitchTeam} className="w-full sm:w-auto bg-white border border-gray-300 text-gray-700 px-6 py-3 md:px-8 md:py-4 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm md:text-base">팀 바꾸기</button>
             {isHost ? (
-              <div className="flex gap-4">
-                <button onClick={onAddBot} className="bg-purple-50 text-purple-700 border border-purple-200 px-8 py-4 rounded-xl font-bold hover:bg-purple-100 transition-all shadow-sm">컴퓨터 추가</button>
-                <button onClick={onStart} className="bg-amber-600 text-white px-12 py-4 rounded-xl font-black text-lg hover:bg-amber-700 transition-all shadow-md active:scale-95 border border-amber-700">말(캐릭터) 선택 및 시작</button>
+              <div className="flex flex-col sm:flex-row gap-3 md:gap-4 w-full sm:w-auto">
+                <button onClick={onAddBot} className="w-full sm:w-auto bg-purple-50 text-purple-700 border border-purple-200 px-6 py-3 md:px-8 md:py-4 rounded-lg md:rounded-xl font-bold hover:bg-purple-100 transition-all shadow-sm text-sm md:text-base">컴퓨터 추가</button>
+                <button onClick={onStart} className="w-full sm:w-auto bg-amber-600 text-white px-8 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-black text-base md:text-lg hover:bg-amber-700 transition-all shadow-md active:scale-95 border border-amber-700">말 선택 및 시작</button>
               </div>
-            ) : (<div className="bg-gray-100 text-gray-500 border border-gray-200 px-12 py-4 rounded-xl font-bold text-lg">방장의 시작을 대기 중...</div>)}
+            ) : (<div className="w-full sm:w-auto bg-gray-100 text-gray-500 border border-gray-200 px-6 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-bold text-center text-sm md:text-lg">방장의 시작을 대기 중...</div>)}
           </div>
         </div>
       );
     }
 
     // ==========================================
-    // Character Select View (독립적 말 선택 및 준비 로직)
+    // Character Select View
     // ==========================================
     function CharacterSelectView({ roomData, roomId, user, db, appId }) {
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
@@ -501,7 +597,6 @@
         });
       };
 
-      // 양 팀 모두 준비 완료 시 선후공 정하기로 이동
       useEffect(() => {
         if (ready.A && ready.B && roomData.status === 'character_select' && isHost) {
           const winningIdx = Math.floor(Math.random() * 2);
@@ -514,64 +609,68 @@
       }, [ready.A, ready.B, roomData.status, isHost, roomId, db, appId]);
 
       return (
-        <div className="h-screen flex flex-col items-center justify-center bg-[#f3f4f6] p-6">
-          <h1 className="text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
-          <p className="text-gray-500 mb-10">자신의 팀 말을 선택하고 준비를 완료해주세요. 양 팀 모두 준비되면 게임이 시작됩니다.</p>
-          <div className="flex gap-16 mb-16">
-            <div className="flex flex-col items-center">
-              <h2 className="text-xl font-bold text-blue-800 mb-6 bg-blue-100 px-8 py-2 rounded-full border border-blue-200 shadow-sm flex items-center gap-2">
-                팀 A {ready.A && <span className="text-xs bg-blue-500 text-white px-2 py-1 rounded-full">준비완료</span>}
+        <div className="h-screen flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 overflow-y-auto">
+          <div className="mt-8 sm:mt-0 text-center">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
+            <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">자신의 팀 말을 선택하고 준비를 완료해주세요. 양 팀 모두 준비되면 게임이 시작됩니다.</p>
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-6 lg:gap-16 mb-8 w-full max-w-4xl justify-center items-center md:items-start">
+            <div className="flex flex-col items-center w-full md:w-auto bg-white md:bg-transparent p-4 md:p-0 rounded-2xl shadow-sm md:shadow-none border border-gray-200 md:border-none">
+              <h2 className="text-lg md:text-xl font-bold text-blue-800 mb-4 md:mb-6 bg-blue-100 px-6 py-1.5 md:px-8 md:py-2 rounded-full border border-blue-200 shadow-sm flex items-center gap-2">
+                팀 A {ready.A && <span className="text-[10px] md:text-xs bg-blue-500 text-white px-2 py-0.5 md:py-1 rounded-full">준비완료</span>}
               </h2>
-              <div className="flex gap-6 mb-6">
+              <div className="flex flex-wrap justify-center gap-3 md:gap-6 mb-4 md:mb-6">
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.A === charName;
                   const disabled = roomData.characters.B === charName || myTeam !== 'A' || ready.A;
                   return (
                     <div key={`A-${charName}`} onClick={() => !disabled && selectChar('A', charName)}
-                      className={`relative w-32 h-40 rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
-                        ${isSelectedByTeam ? `scale-110 shadow-xl border-blue-400` : 'border-gray-200 hover:border-gray-400'}
+                      className={`relative w-24 h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
+                        ${isSelectedByTeam ? `scale-105 md:scale-110 shadow-xl border-blue-400` : 'border-gray-200 hover:border-gray-400'}
                         ${disabled && !isSelectedByTeam ? 'opacity-40 grayscale cursor-not-allowed' : ''}
                       `}>
-                      {isSelectedByTeam && <CheckCircle2 className="absolute top-2 right-2 text-blue-500" size={24}/>}
+                      {isSelectedByTeam && <CheckCircle2 className="absolute top-1 right-1 md:top-2 md:right-2 text-blue-500 w-5 h-5 md:w-6 md:h-6"/>}
                       <ChessPiece3D character={char} count={1} size="large" />
-                      <span className={`mt-5 font-bold ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
+                      <span className={`mt-3 md:mt-5 font-bold text-sm md:text-base ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
                     </div>
                   )
                 })}
               </div>
               {myTeam === 'A' && (
                 <button onClick={() => toggleReady('A')}
-                  className={`px-8 py-3 rounded-xl font-bold text-white shadow-md transition-all active:scale-95 ${ready.A ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                  className={`w-full md:w-auto px-6 py-2.5 md:px-8 md:py-3 rounded-lg md:rounded-xl font-bold text-white shadow-md transition-all active:scale-95 text-sm md:text-base ${ready.A ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'}`}>
                   {ready.A ? '준비 취소' : '준비 완료'}
                 </button>
               )}
             </div>
-            <div className="flex flex-col items-center">
-              <h2 className="text-xl font-bold text-red-800 mb-6 bg-red-100 px-8 py-2 rounded-full border border-red-200 shadow-sm flex items-center gap-2">
-                팀 B {ready.B && <span className="text-xs bg-red-500 text-white px-2 py-1 rounded-full">준비완료</span>}
+            
+            <div className="flex flex-col items-center w-full md:w-auto bg-white md:bg-transparent p-4 md:p-0 rounded-2xl shadow-sm md:shadow-none border border-gray-200 md:border-none">
+              <h2 className="text-lg md:text-xl font-bold text-red-800 mb-4 md:mb-6 bg-red-100 px-6 py-1.5 md:px-8 md:py-2 rounded-full border border-red-200 shadow-sm flex items-center gap-2">
+                팀 B {ready.B && <span className="text-[10px] md:text-xs bg-red-500 text-white px-2 py-0.5 md:py-1 rounded-full">준비완료</span>}
               </h2>
-              <div className="flex gap-6 mb-6">
+              <div className="flex flex-wrap justify-center gap-3 md:gap-6 mb-4 md:mb-6">
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.B === charName;
                   const disabled = roomData.characters.A === charName || myTeam !== 'B' || ready.B;
                   return (
                     <div key={`B-${charName}`} onClick={() => !disabled && selectChar('B', charName)}
-                      className={`relative w-32 h-40 rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
-                        ${isSelectedByTeam ? `scale-110 shadow-xl border-red-400` : 'border-gray-200 hover:border-gray-400'}
+                      className={`relative w-24 h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
+                        ${isSelectedByTeam ? `scale-105 md:scale-110 shadow-xl border-red-400` : 'border-gray-200 hover:border-gray-400'}
                         ${disabled && !isSelectedByTeam ? 'opacity-40 grayscale cursor-not-allowed' : ''}
                       `}>
-                      {isSelectedByTeam && <CheckCircle2 className="absolute top-2 right-2 text-red-500" size={24}/>}
+                      {isSelectedByTeam && <CheckCircle2 className="absolute top-1 right-1 md:top-2 md:right-2 text-red-500 w-5 h-5 md:w-6 md:h-6"/>}
                       <ChessPiece3D character={char} count={1} size="large" />
-                      <span className={`mt-5 font-bold ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
+                      <span className={`mt-3 md:mt-5 font-bold text-sm md:text-base ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
                     </div>
                   )
                 })}
               </div>
               {myTeam === 'B' && (
                 <button onClick={() => toggleReady('B')}
-                  className={`px-8 py-3 rounded-xl font-bold text-white shadow-md transition-all active:scale-95 ${ready.B ? 'bg-gray-500 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}>
+                  className={`w-full md:w-auto px-6 py-2.5 md:px-8 md:py-3 rounded-lg md:rounded-xl font-bold text-white shadow-md transition-all active:scale-95 text-sm md:text-base ${ready.B ? 'bg-gray-500 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'}`}>
                   {ready.B ? '준비 취소' : '준비 완료'}
                 </button>
               )}
@@ -611,12 +710,12 @@
       };
 
       return (
-        <div className="h-screen flex flex-col items-center justify-center bg-[#f3f4f6] p-6 relative overflow-hidden">
-          <h1 className="text-5xl font-black text-gray-800 mb-4 tracking-tighter">선후공 결정</h1>
-          <p className="text-gray-500 mb-16 text-lg font-medium">
+        <div className="h-screen flex flex-col items-center justify-center bg-[#f3f4f6] p-4 md:p-6 relative overflow-hidden">
+          <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter">선후공 결정</h1>
+          <p className="text-gray-500 mb-8 md:mb-16 text-sm md:text-lg font-medium text-center">
             {isHost ? '방장님, 카드를 하나 선택하여 운명을 시험하세요.' : '방장이 선후공 카드를 고르고 있습니다...'}
           </p>
-          <div className="flex gap-12 perspective-[1000px]">
+          <div className="flex flex-row gap-6 md:gap-12 perspective-[1000px]">
             {[0, 1].map(idx => {
               const isSelected = turnData.selected === idx;
               const isRevealed = turnData.selected !== undefined;
@@ -624,28 +723,28 @@
               
               return (
                 <div key={idx} onClick={() => handlePick(idx)}
-                     className={`relative w-48 h-64 cursor-pointer transition-all duration-700
-                       ${!isRevealed && isHost ? 'hover:-translate-y-4 hover:shadow-2xl' : ''}
-                       ${isSelected ? 'scale-110 z-10' : 'scale-100'}
+                     className={`relative w-36 h-48 md:w-48 md:h-64 cursor-pointer transition-all duration-700
+                       ${!isRevealed && isHost ? 'hover:-translate-y-2 md:hover:-translate-y-4 hover:shadow-2xl' : ''}
+                       ${isSelected ? 'scale-105 md:scale-110 z-10' : 'scale-100'}
                      `}
                      style={{ transformStyle: 'preserve-3d', WebkitTransformStyle: 'preserve-3d', transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
                   
                   {/* Card Back */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900 rounded-3xl border-4 border-slate-500 shadow-xl flex items-center justify-center"
+                  <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900 rounded-2xl md:rounded-3xl border-2 md:border-4 border-slate-500 shadow-xl flex items-center justify-center"
                        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(0deg)' }}>
-                    <div className="text-6xl opacity-40 font-black text-white">?</div>
+                    <div className="text-5xl md:text-6xl opacity-40 font-black text-white">?</div>
                   </div>
 
                   {/* Card Front */}
-                  <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center shadow-2xl"
+                  <div className="absolute inset-0 rounded-2xl md:rounded-3xl border-2 md:border-4 flex flex-col items-center justify-center shadow-2xl p-2 text-center"
                        style={{ 
                          backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)',
                          backgroundColor: isWinCard ? '#fef08a' : '#e5e7eb', borderColor: isWinCard ? '#ca8a04' : '#9ca3af'
                        }}>
-                    <span className={`text-5xl font-black ${isWinCard ? 'text-amber-600' : 'text-gray-500'}`}>
+                    <span className={`text-3xl md:text-5xl font-black ${isWinCard ? 'text-amber-600' : 'text-gray-500'}`}>
                       {isWinCard ? '선공' : '후공'}
                     </span>
-                    <span className="text-sm font-bold mt-4 opacity-50">
+                    <span className="text-xs md:text-sm font-bold mt-2 md:mt-4 opacity-50">
                       {isWinCard ? '먼저 시작합니다' : '나중에 시작합니다'}
                     </span>
                   </div>
@@ -654,8 +753,8 @@
             })}
           </div>
           {turnData.selected !== undefined && (
-            <div className="absolute bottom-20 text-2xl font-black text-amber-600 animate-pulse bg-white px-8 py-3 rounded-full shadow-lg border-2 border-amber-200">
-              {turnData.firstTeam === 'A' ? '팀 A' : '팀 B'} 선공! 곧 게임이 시작됩니다...
+            <div className="absolute bottom-10 md:bottom-20 text-lg md:text-2xl font-black text-amber-600 animate-pulse bg-white px-6 py-2.5 md:px-8 md:py-3 rounded-full shadow-lg border-2 border-amber-200 text-center mx-4">
+              {turnData.firstTeam === 'A' ? '팀 A' : '팀 B'} 선공! <br className="block sm:hidden"/>곧 시작됩니다...
             </div>
           )}
         </div>
@@ -690,7 +789,6 @@
         return () => unsubscribe();
       }, [db, roomId, appId]);
 
-      // 실시간 윷 모션 동기화 (1.2초)
       useEffect(() => {
         if (roomData?.rollingEvent && roomData.rollingEvent.id !== lastRollingEventId.current) {
           lastRollingEventId.current = roomData.rollingEvent.id;
@@ -863,11 +961,11 @@
           elements.push(
             <div key={`pos-${pos}`} onClick={() => isMyTurn && pieces[0].team === playingTeam && handlePieceClick(pieces[0].team, pieces[0].id)}
               className={`absolute flex items-center justify-center cursor-pointer transition-transform z-10 transform -translate-x-1/2 -translate-y-[70%]
-                ${isSelected ? 'scale-125 z-20' : 'hover:scale-110'}
+                ${isSelected ? 'scale-110 md:scale-125 z-20' : 'hover:scale-110'}
               `}
               style={{ left: `${posObj.x}%`, top: `${posObj.y}%` }}
             >
-              {isSelected && <div className="absolute -bottom-1 w-10 h-10 bg-amber-400/50 rounded-full animate-ping blur-sm"></div>}
+              {isSelected && <div className="absolute -bottom-1 w-8 h-8 md:w-10 md:h-10 bg-amber-400/50 rounded-full animate-ping blur-sm"></div>}
               <ChessPiece3D character={charConfig} count={pieces.length} />
             </div>
           );
@@ -878,7 +976,7 @@
       const myChar = CHARACTERS[roomData.characters[playingTeam]];
 
       return (
-        <div className="flex h-screen overflow-hidden bg-[#f3f4f6]">
+        <div className="flex flex-col lg:flex-row h-screen w-full overflow-hidden bg-[#f3f4f6]">
           
           {/* --- 완벽한 3D 반원통 윷가락 렌더링 --- */}
           {isRolling && (
@@ -898,7 +996,7 @@
                     <YutStick3D key={i} state={state} isMarked={isMarked} startX={startX} destX={destX} destY={destY} destRotZ={destRotZ} delay={delay} />
                   );
                 })}
-                <h2 className="absolute text-8xl font-black text-white drop-shadow-[0_4px_30px_rgba(255,215,0,0.9)] z-10"
+                <h2 className="absolute text-6xl md:text-8xl font-black text-white drop-shadow-[0_4px_30px_rgba(255,215,0,0.9)] z-10"
                     style={{ opacity: 0, animation: 'textPop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.8s forwards' }}>
                   {rollingResult?.name}!!
                 </h2>
@@ -906,33 +1004,34 @@
             </div>
           )}
 
-          {/* Left Area: Board & Controls (레이아웃 원래대로 복구) */}
-          <div className="flex-1 flex flex-col p-6 relative max-w-5xl mx-auto">
-            <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
+          {/* Left Area: Board & Controls (모바일에서는 위쪽, PC에서는 왼쪽) */}
+          <div className="flex-1 flex flex-col p-3 md:p-6 relative w-full lg:max-w-5xl mx-auto min-h-0 overflow-y-auto custom-scrollbar">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-4 md:mb-6 bg-white p-3 md:p-4 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 flex-shrink-0">
               <div>
-                <h2 className="text-2xl font-black text-gray-800">{roomData.name}</h2>
-                <div className="text-sm font-bold flex items-center gap-3 mt-1">
-                  <span className="text-gray-500">상태:</span>
+                <h2 className="text-lg md:text-2xl font-black text-gray-800 truncate max-w-[150px] sm:max-w-[300px]">{roomData.name}</h2>
+                <div className="text-[10px] md:text-sm font-bold flex items-center gap-1.5 md:gap-3 mt-1">
+                  <span className="text-gray-500 hidden sm:inline">상태:</span>
                   {roomData.status === 'finished' ? (
-                    <span className="text-purple-600 bg-purple-100 px-3 py-1 rounded">게임 종료</span>
+                    <span className="text-purple-600 bg-purple-100 px-2 py-0.5 md:px-3 md:py-1 rounded">게임 종료</span>
                   ) : (
-                    <div className="flex items-center gap-2">
-                       <span className={`px-3 py-1 rounded text-white ${roomData.turn === 'A' ? 'bg-blue-600 shadow-sm' : 'bg-gray-400'}`}>팀 A</span>
-                       <span className="text-gray-400 font-black">VS</span>
-                       <span className={`px-3 py-1 rounded text-white ${roomData.turn === 'B' ? 'bg-red-600 shadow-sm' : 'bg-gray-400'}`}>팀 B</span>
-                       {isMyTurn && <span className="ml-2 animate-pulse text-amber-600 text-xs font-black border border-amber-400 px-2 py-0.5 rounded-full">내 차례!</span>}
+                    <div className="flex items-center gap-1 md:gap-2">
+                       <span className={`px-1.5 py-0.5 md:px-3 md:py-1 rounded text-white ${roomData.turn === 'A' ? 'bg-blue-600 shadow-sm' : 'bg-gray-400'}`}>팀 A</span>
+                       <span className="text-gray-400 font-black text-xs md:text-sm">VS</span>
+                       <span className={`px-1.5 py-0.5 md:px-3 md:py-1 rounded text-white ${roomData.turn === 'B' ? 'bg-red-600 shadow-sm' : 'bg-gray-400'}`}>팀 B</span>
+                       {isMyTurn && <span className="ml-1 md:ml-2 animate-pulse text-amber-600 text-[9px] md:text-xs font-black border border-amber-400 px-1.5 md:px-2 py-0.5 rounded-full whitespace-nowrap">내 차례!</span>}
                     </div>
                   )}
                 </div>
               </div>
-              <button onClick={onLeave} className="flex items-center gap-2 text-gray-500 hover:text-gray-800 font-bold px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors">
-                <LogOut size={16}/> 방 나가기
+              <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 text-gray-500 hover:text-gray-800 font-bold px-2 py-1.5 md:px-4 md:py-2 rounded-lg bg-gray-100 hover:bg-gray-200 transition-colors text-xs md:text-base whitespace-nowrap">
+                <LogOut size={14} className="md:w-4 md:h-4"/> <span className="hidden sm:inline">방 나가기</span><span className="sm:hidden">나가기</span>
               </button>
             </div>
 
             {/* Board Area */}
-            <div className="flex-1 flex items-center justify-center min-h-[500px]">
-              <div className="relative w-full max-w-[450px] aspect-square">
+            <div className="flex-1 flex items-center justify-center min-h-[280px] md:min-h-[400px] my-2 md:my-0">
+              <div className="relative w-full max-w-[320px] md:max-w-[450px] aspect-square">
                 <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                    <rect x="0" y="0" width="100" height="100" fill="none" stroke="#9ca3af" strokeWidth="0.5" />
                    <line x1="0" y1="0" x2="100" y2="100" stroke="#9ca3af" strokeWidth="0.5" />
@@ -953,86 +1052,88 @@
                   return (
                     <div key={`bg-${pos}`} 
                       className={`absolute rounded-full bg-white border border-gray-400 flex items-center justify-center transition-all shadow-sm transform -translate-x-1/2 -translate-y-1/2
-                        ${isCorner || isCenter ? 'w-8 h-8 border-[2px]' : 'w-4 h-4'}
-                        ${isDestination ? 'ring-4 ring-amber-400 bg-amber-100 scale-150 z-0 border-amber-500' : ''}
+                        ${isCorner || isCenter ? 'w-6 h-6 md:w-8 md:h-8 border-[2px]' : 'w-3 h-3 md:w-4 md:h-4'}
+                        ${isDestination ? 'ring-2 md:ring-4 ring-amber-400 bg-amber-100 scale-125 md:scale-150 z-0 border-amber-500' : ''}
                       `}
                       style={{ left: `${x}%`, top: `${y}%` }}
                     >
-                      {isCenter && <div className="w-3 h-3 bg-gray-400 rounded-full"></div>}
+                      {isCenter && <div className="w-2 h-2 md:w-3 md:h-3 bg-gray-400 rounded-full"></div>}
                     </div>
                   )
                 })}
                 {renderPiecesOnBoard()}
-                <div className="absolute -bottom-10 -right-10 text-gray-500 font-bold bg-white px-4 py-1.5 rounded-full shadow-sm border border-gray-200 text-xs">출발 / 도착</div>
+                <div className="absolute -bottom-6 -right-6 md:-bottom-10 md:-right-10 text-gray-500 font-bold bg-white px-2 py-1 md:px-4 md:py-1.5 rounded-full shadow-sm border border-gray-200 text-[8px] md:text-xs">출발/도착</div>
               </div>
             </div>
 
             {/* Bottom Controls */}
-            <div className="h-48 bg-white mt-8 rounded-3xl shadow-sm border border-gray-200 p-6 flex gap-8">
-              <div className="flex-[0.8] flex flex-col justify-center gap-2 border-r border-gray-200 pr-8">
-                <h3 className="font-bold text-gray-700 mb-2 flex items-center gap-2">
+            <div className="bg-white mt-4 md:mt-8 rounded-2xl md:rounded-3xl shadow-sm border border-gray-200 p-3 md:p-6 flex flex-col sm:flex-row gap-4 md:gap-8 flex-shrink-0">
+              {/* 대기말 영역 */}
+              <div className="flex-1 sm:flex-[0.8] flex flex-col justify-center gap-2 sm:border-r border-gray-200 sm:pr-4 md:pr-8">
+                <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-2 text-sm md:text-base">
                   내 대기 말
-                  {isBotTurn && isMyTurn && <span className="text-purple-600 text-xs ml-2 font-bold bg-purple-100 px-2 py-0.5 rounded">컴퓨터 조작중</span>}
+                  {isBotTurn && isMyTurn && <span className="text-purple-600 text-[10px] md:text-xs ml-1 md:ml-2 font-bold bg-purple-100 px-1.5 md:px-2 py-0.5 rounded">컴퓨터 조작중</span>}
                 </h3>
-                <div className="flex gap-4">
+                <div className="flex flex-wrap gap-2 md:gap-4 justify-start sm:justify-start">
                   {roomData.pieces[playingTeam].map(p => (
                     <div key={p.id} onClick={() => p.pos === 0 && handlePieceClick(playingTeam, p.id)}
-                      className={`relative cursor-pointer transition-transform w-12 h-16 flex items-end justify-center
-                        ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:-translate-y-2'}
+                      className={`relative cursor-pointer transition-transform w-8 h-12 md:w-12 md:h-16 flex items-end justify-center
+                        ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:-translate-y-1 md:hover:-translate-y-2'}
                         ${selectedPiece?.id === p.id ? 'scale-110 drop-shadow-xl' : ''}
                       `}
                     >
-                      {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute bottom-0 w-12 h-12 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
+                      {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute bottom-0 w-8 h-8 md:w-12 md:h-12 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
                       <ChessPiece3D character={myChar} count={1} />
-                      {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-xl z-20 bg-white/80 rounded-xl shadow-inner border border-green-200">완</div>}
+                      {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-sm md:text-xl z-20 bg-white/80 rounded-lg md:rounded-xl shadow-inner border border-green-200">완</div>}
                     </div>
                   ))}
                 </div>
               </div>
 
+              {/* 액션 컨트롤 영역 */}
               <div className="flex-[1.2] flex flex-col justify-center items-center">
                 {roomData.status === 'playing' ? (
                   <>
-                    <div className="flex w-full gap-4 mb-4">
+                    <div className="flex w-full gap-2 md:gap-4 mb-3 md:mb-4">
                       <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling} 
-                        className="flex-1 bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-2xl py-4 rounded-2xl shadow-lg active:translate-y-1 transition-all relative overflow-hidden">
-                        {isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (남은 기회: ${roomData.throwChances})` : '말을 이동하세요') : '상대 턴 대기'}
+                        className="flex-1 bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-base md:text-2xl py-3 md:py-4 rounded-xl md:rounded-2xl shadow-md md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden">
+                        {isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말을 이동하세요') : '상대 턴 대기'}
                       </button>
                     </div>
                     
-                    <div className="w-full bg-gray-50 p-3 rounded-xl border border-gray-200 flex gap-3 min-h-[60px] items-center overflow-x-auto">
-                      {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-sm font-bold w-full text-center">적립된 이동 횟수가 없습니다</span>}
+                    <div className="w-full bg-gray-50 p-2 md:p-3 rounded-lg md:rounded-xl border border-gray-200 flex gap-2 md:gap-3 min-h-[50px] md:min-h-[60px] items-center overflow-x-auto custom-scrollbar pb-1 md:pb-0">
+                      {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-xs md:text-sm font-bold w-full text-center">적립된 이동 횟수가 없습니다</span>}
                       {roomData.yutQueue.map((yutKey, idx) => {
                         const res = YUT_RESULTS[yutKey];
                         return (
                           <button key={idx} onClick={() => selectedPiece && executeMove(selectedPiece.id, yutKey, idx)} disabled={!selectedPiece}
-                            className={`flex flex-col items-center justify-center min-w-[70px] h-14 rounded-lg font-black shadow-sm transition-all border-b-4 
+                            className={`flex flex-col items-center justify-center min-w-[50px] h-10 md:min-w-[70px] md:h-14 rounded-md md:rounded-lg font-black shadow-sm transition-all border-b-2 md:border-b-4 flex-shrink-0 
                               ${selectedPiece 
                               ? 'bg-blue-500 hover:bg-blue-400 text-white border-blue-700 active:border-b-0 active:translate-y-1 cursor-pointer animate-pulse' 
                               : 'bg-gray-200 text-gray-500 border-gray-300'}
                             `}
                           >
-                            <span className="text-lg leading-none">{res.name}</span>
-                            <span className="text-[10px]">{res.steps > 0 ? `+${res.steps}칸` : `${res.steps}칸`}</span>
+                            <span className="text-sm md:text-lg leading-none">{res.name}</span>
+                            <span className="text-[8px] md:text-[10px] mt-0.5 md:mt-0">{res.steps > 0 ? `+${res.steps}칸` : `${res.steps}칸`}</span>
                           </button>
                         )
                       })}
                     </div>
                   </>
                 ) : (
-                  <div className="text-4xl font-black text-gray-800 drop-shadow-sm">게임 종료!</div>
+                  <div className="text-2xl md:text-4xl font-black text-gray-800 drop-shadow-sm py-4 md:py-0">게임 종료!</div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Right Area: Chat & Logs (채팅창 스크롤 보장을 위한 최소한의 수정만 유지 min-h-0) */}
-          <div className="w-80 bg-white border-l border-gray-200 flex flex-col shadow-sm">
-            <div className="h-1/3 border-b border-gray-200 flex flex-col bg-gray-50">
-              <div className="p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2">게임 기록</div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3 flex flex-col-reverse custom-scrollbar">
+          {/* Right Area: Chat & Logs (모바일에서는 하단 35vh, PC에서는 우측 풀하이트) */}
+          <div className="w-full lg:w-80 h-[35vh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
+            <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
+              <div className="p-2 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center gap-2 flex-shrink-0">게임 기록</div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-3 flex flex-col-reverse custom-scrollbar">
                 {[...roomData.logs].reverse().map((log, idx) => (
-                  <div key={idx} className="text-xs text-gray-600 bg-white p-3 rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
+                  <div key={idx} className="text-[10px] md:text-xs text-gray-600 bg-white p-2 md:p-3 rounded-md md:rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
                     {log}
                   </div>
                 ))}
@@ -1067,23 +1168,23 @@
 
       return (
         <div className="flex-1 min-h-0 flex flex-col bg-white">
-          <div className="p-3 border-b border-gray-200 flex justify-between items-center">
-            <span className="font-bold text-gray-700 text-sm flex items-center gap-2"><MessageSquare size={16}/> 채팅</span>
-            <div className="flex bg-gray-100 p-1 rounded-lg">
-              <button onClick={() => setChatMode('all')} className={`text-[10px] px-3 py-1.5 rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
-              <button onClick={() => setChatMode('team')} className={`text-[10px] px-3 py-1.5 rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
+          <div className="p-2 md:p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+            <span className="font-bold text-gray-700 text-xs md:text-sm flex items-center gap-1 md:gap-2"><MessageSquare size={14} className="md:w-4 md:h-4"/> 채팅</span>
+            <div className="flex bg-gray-100 p-0.5 md:p-1 rounded-md md:rounded-lg">
+              <button onClick={() => setChatMode('all')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
+              <button onClick={() => setChatMode('team')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
             </div>
           </div>
           
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-3 md:space-y-4 custom-scrollbar">
             {visibleMessages.map(m => {
               const isMe = m.uid === myPlayerInfo.uid;
               const isTeamChat = m.mode === 'team';
               const charName = characters?.[m.team] ? CHARACTERS[characters[m.team]].name : m.team;
               return (
                 <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <span className="text-[10px] font-bold text-gray-400 mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
-                  <div className={`px-4 py-2 rounded-2xl max-w-[85%] text-sm shadow-sm ${
+                  <span className="text-[8px] md:text-[10px] font-bold text-gray-400 mb-0.5 md:mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
+                  <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl max-w-[90%] md:max-w-[85%] text-xs md:text-sm shadow-sm ${
                     isTeamChat ? 'bg-blue-600 text-white rounded-tr-sm' : (isMe ? 'bg-gray-800 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm')
                   }`}>{m.text}</div>
                 </div>
@@ -1092,9 +1193,9 @@
             <div ref={chatEndRef} />
           </div>
 
-          <form onSubmit={sendChat} className="p-4 border-t border-gray-200 bg-gray-50">
-            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={chatMode === 'all' ? "전체 메시지..." : "팀원에게만 보이는 메시지..."}
-              className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-sm text-gray-800 transition-all shadow-sm" />
+          <form onSubmit={sendChat} className="p-2 md:p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+            <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={chatMode === 'all' ? "메시지..." : "팀원 메시지..."}
+              className="w-full px-3 py-2 md:px-4 md:py-3 bg-white border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs md:text-sm text-gray-800 transition-all shadow-sm" />
           </form>
         </div>
       );
