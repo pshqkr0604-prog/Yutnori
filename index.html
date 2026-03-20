@@ -304,6 +304,27 @@
         return () => unsubscribe();
       }, []);
 
+      // 사용자 접속 상태 갱신 (30초마다)
+      useEffect(() => {
+        if (!user || !db || !playerName) return;
+        const userRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_users', user.uid);
+        
+        const updateOnline = async () => {
+          try {
+            const snap = await getDoc(userRef);
+            if (snap.exists()) {
+              await updateDoc(userRef, { lastOnline: Date.now(), name: playerName });
+            } else {
+              await setDoc(userRef, { wins: 0, losses: 0, versus: {}, lastOnline: Date.now(), name: playerName });
+            }
+          } catch(e) {}
+        };
+        
+        updateOnline();
+        const intervalId = setInterval(updateOnline, 30000);
+        return () => clearInterval(intervalId);
+      }, [user, db, playerName]);
+
       // 사용자 전적(승률) 불러오기
       useEffect(() => {
         if (!user || !db) return;
@@ -311,8 +332,6 @@
         const unsubscribe = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
             setUserStats(docSnap.data());
-          } else {
-            setDoc(userRef, { wins: 0, losses: 0, versus: {} });
           }
         });
         return () => unsubscribe();
@@ -555,7 +574,7 @@
       return (
         <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
           {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
-          {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} /></div>}
+          {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} db={db} appId={GLOBAL_APP_ID} /></div>}
           {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} /></div>}
           {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
           {currentView === 'turn_select' && <div className="h-full w-full overflow-y-auto"><TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
@@ -567,90 +586,186 @@
     // ==========================================
     // Lobby View
     // ==========================================
-    function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin, user, onDelete, auth, userStats }) {
+    function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin, user, onDelete, auth, userStats, db, appId }) {
+      const [onlineUsers, setOnlineUsers] = useState([]);
+      const [lobbyMessages, setLobbyMessages] = useState([]);
+      const [chatInput, setChatInput] = useState('');
+      const chatEndRef = useRef(null);
+
       const handleLogout = async () => {
          if(confirm("로그아웃 하시겠습니까?")) {
            await signOut(auth);
          }
       }
 
+      // 로비: 접속자 목록 & 전체 채팅 데이터 가져오기
+      useEffect(() => {
+        if (!db || !appId) return;
+
+        // 1. 접속자 목록 가져오기 (1분 이내 lastOnline 갱신된 유저)
+        const usersRef = collection(db, 'artifacts', appId, 'public', 'data', 'yut_users');
+        const unsubscribeUsers = onSnapshot(usersRef, (snapshot) => {
+          const now = Date.now();
+          const activeUsers = snapshot.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(u => u.lastOnline && (now - u.lastOnline < 60000))
+            .filter(u => u.name); // 이름이 있는 유저만 필터링
+          setOnlineUsers(activeUsers);
+        });
+
+        // 2. 광장 채팅 데이터 가져오기 (메모리 정렬 적용)
+        const chatRef = collection(db, 'artifacts', appId, 'public', 'data', 'yut_lobby_chat');
+        const unsubscribeChat = onSnapshot(chatRef, (snapshot) => {
+          const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // 오래된게 위로 오도록 오름차순 정렬
+          setLobbyMessages(msgs);
+        });
+
+        return () => {
+          unsubscribeUsers();
+          unsubscribeChat();
+        };
+      }, [db, appId]);
+
+      useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [lobbyMessages]);
+
+      const sendLobbyChat = async (e) => {
+        e.preventDefault();
+        if (!chatInput.trim() || !db || !user) return;
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'yut_lobby_chat'), {
+          text: chatInput,
+          uid: user.uid,
+          name: playerName || '익명유저',
+          timestamp: Date.now()
+        });
+        setChatInput('');
+      };
+
       const totalGames = (userStats?.wins || 0) + (userStats?.losses || 0);
       const winRate = totalGames === 0 ? 0 : Math.round(((userStats.wins || 0) / totalGames) * 100);
 
       return (
-        <div className="max-w-4xl mx-auto p-4 md:p-6 pt-10 md:pt-20 relative">
-          <button onClick={handleLogout} className="absolute top-4 right-4 md:top-6 md:right-6 flex items-center gap-1 md:gap-2 text-gray-500 hover:text-red-600 font-bold px-2 py-1.5 md:px-3 md:py-2 rounded-lg bg-white border border-gray-200 shadow-sm transition-colors text-xs md:text-sm">
-            <LogOut size={14} className="md:w-4 md:h-4"/> 로그아웃
-          </button>
-          <div className="text-center mb-8 md:mb-12 mt-8 md:mt-0">
-            <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
-            <p className="text-gray-500 font-medium text-sm md:text-lg">가장 리얼한 온라인 윷놀이 보드게임</p>
-          </div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-6 md:mb-8">
-            <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center">
-              <label className="block text-xs md:text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
-              <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={10}
-                className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-50 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" />
+        <div className="flex flex-col lg:flex-row h-full w-full">
+          {/* Main Lobby Area */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar relative p-4 md:p-6 pt-10 md:pt-20 pb-12">
+            <button onClick={handleLogout} className="absolute top-4 right-4 md:top-6 md:right-6 flex items-center gap-1 md:gap-2 text-gray-500 hover:text-red-600 font-bold px-2 py-1.5 md:px-3 md:py-2 rounded-lg bg-white border border-gray-200 shadow-sm transition-colors text-xs md:text-sm">
+              <LogOut size={14} className="md:w-4 md:h-4"/> 로그아웃
+            </button>
+            <div className="text-center mb-8 md:mb-12 mt-8 md:mt-0">
+              <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
+              <p className="text-gray-500 font-medium text-sm md:text-lg">가장 리얼한 온라인 윷놀이 보드게임</p>
             </div>
             
-            <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center items-center">
-               <h2 className="text-xs md:text-sm font-bold text-gray-500 mb-2">내 전적 (자동 기록)</h2>
-               <div className="flex justify-center items-end gap-6">
-                 <div className="text-center"><span className="block text-2xl md:text-3xl font-black text-blue-600">{userStats?.wins || 0}</span><span className="text-[10px] md:text-xs font-bold text-gray-400">승</span></div>
-                 <div className="text-center"><span className="block text-2xl md:text-3xl font-black text-red-600">{userStats?.losses || 0}</span><span className="text-[10px] md:text-xs font-bold text-gray-400">패</span></div>
-                 <div className="text-center ml-2 pl-6 border-l border-gray-200"><span className="block text-2xl md:text-3xl font-black text-amber-500">{winRate}%</span><span className="text-[10px] md:text-xs font-bold text-gray-400">승률</span></div>
-               </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-6 md:mb-8">
+              <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center">
+                <label className="block text-xs md:text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
+                <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={10}
+                  className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-50 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" />
+              </div>
+              
+              <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center items-center">
+                 <h2 className="text-xs md:text-sm font-bold text-gray-500 mb-2">내 전적 (자동 기록)</h2>
+                 <div className="flex justify-center items-end gap-6">
+                   <div className="text-center"><span className="block text-2xl md:text-3xl font-black text-blue-600">{userStats?.wins || 0}</span><span className="text-[10px] md:text-xs font-bold text-gray-400">승</span></div>
+                   <div className="text-center"><span className="block text-2xl md:text-3xl font-black text-red-600">{userStats?.losses || 0}</span><span className="text-[10px] md:text-xs font-bold text-gray-400">패</span></div>
+                   <div className="text-center ml-2 pl-6 border-l border-gray-200"><span className="block text-2xl md:text-3xl font-black text-amber-500">{winRate}%</span><span className="text-[10px] md:text-xs font-bold text-gray-400">승률</span></div>
+                 </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row justify-between items-center mb-4 md:mb-6 gap-4">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2 w-full sm:w-auto"><Play className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /> 게임 방 목록</h2>
+              <button onClick={onCreate} className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg md:rounded-xl font-bold shadow-md transition-all active:scale-95 text-sm md:text-base">방 만들기</button>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-5 pb-12">
+              {rooms.length === 0 ? (
+                <div className="col-span-full text-center py-12 md:py-16 text-gray-400 bg-white rounded-xl md:rounded-2xl border border-dashed border-gray-300 text-sm md:text-base">현재 개설된 방이 없습니다. 직접 만들어보세요!</div>
+              ) : (
+                rooms.map(room => {
+                  // 게임 이어하기 및 관전하기 버튼 논리 처리
+                  const isMyGame = user && room.players.some(p => p.uid === user.uid);
+                  const isSpectator = user && room.spectators?.some(p => p.uid === user.uid);
+                  let btnText = '참가하기';
+                  if (isMyGame) {
+                     btnText = room.status === 'lobby' ? '참가하기' : '이어하기';
+                  } else if (isSpectator) {
+                     btnText = '관전 중';
+                  } else if (room.status !== 'lobby') {
+                     btnText = '관전하기';
+                  }
+
+                  return (
+                    <div key={room.id} className="bg-white p-4 md:p-5 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 hover:border-amber-400 transition-all relative group flex flex-col justify-between min-h-[160px]">
+                      {user && room.hostId === user.uid && (
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(room.id); }} className="absolute top-3 right-3 md:top-4 md:right-4 text-gray-400 hover:text-red-500 transition-colors" title="방 삭제">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                      <div>
+                        <div className="flex justify-between items-start mb-3 md:mb-4 pr-6">
+                          <h3 className="font-bold text-base md:text-lg text-gray-800 flex-1 truncate mr-2">{room.name}</h3>
+                          <span className={`text-[10px] md:text-xs px-2 py-1 rounded-md font-bold flex-shrink-0 ${room.status !== 'lobby' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
+                            {room.status !== 'lobby' ? '게임중' : '대기중'}
+                          </span>
+                        </div>
+                        <div className="flex items-center text-gray-500 text-xs md:text-sm mb-4 md:mb-5"><UsersIcon size={14} className="mr-1 md:mr-2 md:w-4 md:h-4" />인원: {room.players.length} / 6</div>
+                      </div>
+                      <button onClick={() => onJoin(room.id)} disabled={!isMyGame && room.status === 'lobby' && room.players.length >= 6}
+                        className={`w-full font-bold py-2 md:py-2.5 rounded-md md:rounded-lg transition-colors border text-sm md:text-base
+                          ${isMyGame && room.status !== 'lobby' ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' : 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200 disabled:opacity-50'}
+                        `}>
+                        {btnText}
+                      </button>
+                    </div>
+                  )
+                })
+              )}
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row justify-between items-center mb-4 md:mb-6 gap-4">
-            <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2 w-full sm:w-auto"><Play className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /> 게임 방 목록</h2>
-            <button onClick={onCreate} className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg md:rounded-xl font-bold shadow-md transition-all active:scale-95 text-sm md:text-base">방 만들기</button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 pb-12">
-            {rooms.length === 0 ? (
-              <div className="col-span-full text-center py-12 md:py-16 text-gray-400 bg-white rounded-xl md:rounded-2xl border border-dashed border-gray-300 text-sm md:text-base">현재 개설된 방이 없습니다. 직접 만들어보세요!</div>
-            ) : (
-              rooms.map(room => {
-                // 게임 이어하기 및 관전하기 버튼 논리 처리
-                const isMyGame = user && room.players.some(p => p.uid === user.uid);
-                const isSpectator = user && room.spectators?.some(p => p.uid === user.uid);
-                let btnText = '참가하기';
-                if (isMyGame) {
-                   btnText = room.status === 'lobby' ? '참가하기' : '이어하기';
-                } else if (isSpectator) {
-                   btnText = '관전 중';
-                } else if (room.status !== 'lobby') {
-                   btnText = '관전하기';
-                }
-
-                return (
-                  <div key={room.id} className="bg-white p-4 md:p-5 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 hover:border-amber-400 transition-all relative group flex flex-col justify-between min-h-[160px]">
-                    {user && room.hostId === user.uid && (
-                      <button onClick={(e) => { e.stopPropagation(); onDelete(room.id); }} className="absolute top-3 right-3 md:top-4 md:right-4 text-gray-400 hover:text-red-500 transition-colors" title="방 삭제">
-                        <Trash2 size={16} />
-                      </button>
-                    )}
-                    <div>
-                      <div className="flex justify-between items-start mb-3 md:mb-4 pr-6">
-                        <h3 className="font-bold text-base md:text-lg text-gray-800 flex-1 truncate mr-2">{room.name}</h3>
-                        <span className={`text-[10px] md:text-xs px-2 py-1 rounded-md font-bold flex-shrink-0 ${room.status !== 'lobby' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
-                          {room.status !== 'lobby' ? '게임중' : '대기중'}
-                        </span>
-                      </div>
-                      <div className="flex items-center text-gray-500 text-xs md:text-sm mb-4 md:mb-5"><UsersIcon size={14} className="mr-1 md:mr-2 md:w-4 md:h-4" />인원: {room.players.length} / 6</div>
-                    </div>
-                    <button onClick={() => onJoin(room.id)} disabled={!isMyGame && room.status === 'lobby' && room.players.length >= 6}
-                      className={`w-full font-bold py-2 md:py-2.5 rounded-md md:rounded-lg transition-colors border text-sm md:text-base
-                        ${isMyGame && room.status !== 'lobby' ? 'bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200' : 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-gray-200 disabled:opacity-50'}
-                      `}>
-                      {btnText}
-                    </button>
+          {/* Right Sidebar: 접속자 목록 & 로비 단체 채팅 (모바일 60dvh) */}
+          <div className="w-full lg:w-80 h-[60dvh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
+            {/* 1. 접속 중인 사람들 목록 */}
+            <div className="flex-1 lg:h-1/3 min-h-[120px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
+              <div className="p-2 md:p-3 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center justify-between flex-shrink-0">
+                <span className="flex items-center gap-1.5"><UsersIcon size={14}/> 접속 중</span>
+                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[10px]">{onlineUsers.length}명</span>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
+                {onlineUsers.map(u => (
+                  <div key={u.id} className="flex items-center gap-2 text-[11px] md:text-xs font-medium text-gray-700 p-1.5 bg-white rounded-md border border-gray-100 shadow-sm">
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0"></div>
+                    <span className="truncate flex-1">{u.name}</span>
+                    {user && u.id === user.uid && <span className="text-blue-500 text-[9px] flex-shrink-0">(나)</span>}
                   </div>
-                )
-              })
-            )}
+                ))}
+              </div>
+            </div>
+            
+            {/* 2. 로비 광장 채팅 */}
+            <div className="flex-[2] lg:h-2/3 min-h-[200px] flex flex-col bg-white">
+              <div className="p-2 md:p-3 border-b border-gray-200 flex items-center gap-1.5 flex-shrink-0 font-bold text-gray-700 text-xs md:text-sm">
+                <MessageSquare size={14} /> 광장 채팅
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-3 space-y-2 custom-scrollbar flex flex-col">
+                {lobbyMessages.map(m => {
+                  const isMe = user && m.uid === user.uid;
+                  return (
+                    <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                      <span className="text-[9px] font-bold text-gray-400 mb-0.5 px-1">{m.name}</span>
+                      <div className={`px-3 py-1.5 rounded-xl max-w-[90%] text-xs shadow-sm ${isMe ? 'bg-amber-500 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'}`}>
+                        {m.text}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </div>
+              <form onSubmit={sendLobbyChat} className="p-2 md:p-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+                <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="광장에 메시지 보내기..."
+                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs transition-all shadow-sm" />
+              </form>
+            </div>
           </div>
         </div>
       );
@@ -981,9 +1096,10 @@
       useEffect(() => {
         if (!db || !roomId) return;
         const chatRef = collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`);
-        const q = query(chatRef, orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-          setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse());
+        const unsubscribe = onSnapshot(chatRef, (snapshot) => {
+          const rawMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          rawMsgs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)); // 최신이 앞으로 (기존 reverse() 대응)
+          setMessages(rawMsgs);
         });
         return () => unsubscribe();
       }, [db, roomId, appId]);
@@ -1361,7 +1477,7 @@
               </button>
             </div>
 
-            {/* Board Container (깔끔한 흰색 카드 컨테이너 복구 & 찌그러짐 방지) */}
+            {/* Board Container */}
             <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
                
                {/* 상대편 대기 말 영역 */}
@@ -1478,7 +1594,7 @@
             </div>
           </div>
 
-          {/* Right Area: Chat & Logs */}
+          {/* Right Area: Chat & Logs (모바일에서는 화면 밖 하단 배치, 필요시 스크롤해서 확인) */}
           <div className="w-full lg:w-80 h-[50dvh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
             <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
               <div className="p-2 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center gap-2 flex-shrink-0">게임 기록</div>
@@ -1511,7 +1627,7 @@
         e.preventDefault();
         if (!input.trim() || !db) return;
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`), {
-          text: input, uid: myPlayerInfo.uid, name: myPlayerInfo.name, team: myPlayerInfo.team, mode: chatMode, createdAt: serverTimestamp()
+          text: input, uid: myPlayerInfo.uid, name: myPlayerInfo.name, team: myPlayerInfo.team, mode: chatMode, timestamp: Date.now()
         });
         setInput('');
       };
