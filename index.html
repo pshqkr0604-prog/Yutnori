@@ -368,6 +368,7 @@
             ready: { A: false, B: false },
             turnData: null,
             winnerTeam: null, // 승리팀 저장용
+            lastActionTime: Date.now(), // 타임아웃을 위한 시간 추가
             yutQueue: [],
             pieces: {
               A: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ],
@@ -557,8 +558,8 @@
           {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} /></div>}
           {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} /></div>}
           {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
-          {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
-          {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'turn_select' && <div className="h-full w-full overflow-y-auto"><TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
+          {currentView === 'game' && <div className="h-full w-full overflow-y-auto lg:overflow-hidden"><GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} /></div>}
         </div>
       );
     }
@@ -788,7 +789,8 @@
           updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
             status: 'turn_select', 
             turnData: { winningIdx: winningIdx },
-            logs: arrayUnion('양 팀 모두 준비 완료. 선후공 결정을 진행합니다.')
+            logs: arrayUnion('양 팀 모두 준비 완료. 선후공 결정을 진행합니다.'),
+            lastActionTime: Date.now() // 타임아웃 갱신
           });
         }
       }, [ready.A, ready.B, roomData.status, isHost, roomId, db, appId]);
@@ -870,7 +872,7 @@
     }
 
     // ==========================================
-    // Turn Select View
+    // Turn Select View 
     // ==========================================
     function TurnSelectView({ roomData, roomId, user, db, appId }) {
       const isPlayer = roomData.players.some(p => p.uid === user.uid && !p.isBot);
@@ -888,14 +890,16 @@
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
           'turnData.selected': idx,
           'turnData.firstTeam': firstTeam,
-          logs: arrayUnion(`카드가 선택되었습니다! ${firstTeam === 'A' ? '팀 A' : '팀 B'}가 선공을 잡았습니다!`)
+          logs: arrayUnion(`카드가 선택되었습니다! ${firstTeam === 'A' ? '팀 A' : '팀 B'}가 선공을 잡았습니다!`),
+          lastActionTime: Date.now() // 타임아웃 시작 시간 기록
         });
 
         setTimeout(async () => {
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
             status: 'playing',
             turn: firstTeam,
-            throwChances: 1
+            throwChances: 1,
+            lastActionTime: Date.now() // 턴 시작 시간 갱신
           });
         }, 3000);
       };
@@ -961,6 +965,8 @@
       const [isRolling, setIsRolling] = useState(false);
       const [rollingResult, setRollingResult] = useState(null);
       const lastRollingEventId = useRef(null);
+      // 타임아웃을 위한 현재 시간 상태
+      const [now, setNow] = useState(Date.now());
       
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
       const isSpectator = myPlayerInfo.team === 'spectator';
@@ -995,11 +1001,24 @@
         }
       }, [roomData?.rollingEvent]);
 
+      // 타임아웃 카운터 1초마다 갱신
+      useEffect(() => {
+        if (roomData?.status !== 'playing') return;
+        const interval = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(interval);
+      }, [roomData?.status]);
+
+      // 타임아웃 계산 (60초)
+      const timeoutSecondsLeft = Math.max(0, 60 - Math.floor((now - (roomData?.lastActionTime || now)) / 1000));
+      // 내 턴이 아니고, 관전자도 아니며, 시간이 60초 넘게 초과되었을 때 (버튼 활성화)
+      const isOpponentTimeout = !isMyTurn && !isSpectator && roomData?.lastActionTime && (now - roomData.lastActionTime > 60000);
+
       const checkTurnEnd = async (currentChances, currentQueue) => {
         if (currentChances <= 0 && currentQueue.length === 0) {
           const nextTurn = roomData.turn === 'A' ? 'B' : 'A';
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-            turn: nextTurn, throwChances: 1, logs: arrayUnion(`[턴 종료] ${nextTurn === 'A' ? '팀 A' : '팀 B'}의 차례입니다.`)
+            turn: nextTurn, throwChances: 1, logs: arrayUnion(`[턴 종료] ${nextTurn === 'A' ? '팀 A' : '팀 B'}의 차례입니다.`),
+            lastActionTime: Date.now() // 턴 종료 시 타임아웃 리셋
           });
           return true;
         }
@@ -1020,7 +1039,8 @@
         
         const eventId = Date.now();
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-          rollingEvent: { id: eventId, resultKey: resultKey }
+          rollingEvent: { id: eventId, resultKey: resultKey },
+          lastActionTime: Date.now() // 윷 던질 때 타임아웃 리셋
         });
         
         setTimeout(async () => {
@@ -1031,7 +1051,8 @@
 
           if (resultKey === '-1' && onBoardPieces.length === 0) {
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-              throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 빽도! (판에 말이 없어 이동 불가)`)
+              throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 빽도! (판에 말이 없어 이동 불가)`),
+              lastActionTime: Date.now()
             });
             await checkTurnEnd(newChances, roomData.yutQueue); 
             return;
@@ -1039,7 +1060,8 @@
 
           const newQueue = [...roomData.yutQueue, resultKey];
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-            yutQueue: newQueue, throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`)
+            yutQueue: newQueue, throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`),
+            lastActionTime: Date.now()
           });
           await checkTurnEnd(newChances, newQueue);
         }, 1200); 
@@ -1111,7 +1133,8 @@
         
         const updateData = {
           pieces: piecesUpdate, yutQueue: newQueue, throwChances: newChances,
-          logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 말이 이동했습니다. ${turnMsg}`)
+          logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 말이 이동했습니다. ${turnMsg}`),
+          lastActionTime: Date.now() // 말 이동 시 타임아웃 리셋
         };
 
         if (isWin) {
@@ -1160,6 +1183,52 @@
         setSelectedPiece(null);
 
         if (!isWin) await checkTurnEnd(newChances, newQueue); 
+      };
+
+      // 타임아웃 발생 시 승리 선언 기능
+      const claimVictoryByTimeout = async () => {
+        if (!confirm("상대방의 응답이 1분 이상 없습니다.\n부전승으로 게임을 끝내시겠습니까?")) return;
+        
+        const winners = roomData.players.filter(p => p.team === myTeam && !p.isBot);
+        const losers = roomData.players.filter(p => p.team !== myTeam && p.team !== 'spectator' && !p.isBot);
+
+        roomData.players.forEach(async (p) => {
+           if (p.isBot || p.team === 'spectator') return;
+           const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_users', p.uid);
+           const isWinner = p.team === myTeam;
+           const opps = isWinner ? losers : winners;
+           
+           try {
+             const userSnap = await getDoc(userRef);
+             let updates = {};
+             if (isWinner) updates.wins = increment(1);
+             else updates.losses = increment(1);
+             
+             opps.forEach(opp => {
+                 if (isWinner) updates[`versus.${opp.uid}.wins`] = increment(1);
+                 else updates[`versus.${opp.uid}.losses`] = increment(1);
+                 updates[`versus.${opp.uid}.name`] = opp.name;
+             });
+
+             if (!userSnap.exists()) {
+                let initialData = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, versus: {} };
+                opps.forEach(opp => {
+                    initialData.versus[opp.uid] = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, name: opp.name };
+                });
+                await setDoc(userRef, initialData);
+             } else {
+                await updateDoc(userRef, updates);
+             }
+           } catch(err) {
+             console.error("전적 업데이트 에러:", err);
+           }
+        });
+
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+          status: 'finished',
+          winnerTeam: myTeam,
+          logs: arrayUnion(`🚨 상대방의 접속 끊김/시간 초과로 ${myTeam}팀이 승리했습니다!`)
+        });
       };
 
       const handlePieceClick = (team, id) => {
@@ -1292,7 +1361,7 @@
               </button>
             </div>
 
-            {/* Board Container */}
+            {/* Board Container (깔끔한 흰색 카드 컨테이너 복구 & 찌그러짐 방지) */}
             <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
                
                {/* 상대편 대기 말 영역 */}
@@ -1374,11 +1443,18 @@
 
               {/* 액션 컨트롤 영역 */}
               <div className="flex-1 flex flex-col justify-center min-w-0">
-                <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling || isSpectator} 
-                  className={`w-full bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-sm sm:text-lg md:text-2xl py-3 sm:py-4 md:py-5 rounded-lg md:rounded-2xl shadow-sm md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden
-                    ${isSpectator ? 'opacity-70 cursor-not-allowed' : ''}`}>
-                  {isSpectator ? '관전 중입니다' : (isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말 이동하기') : '상대 턴 대기')}
-                </button>
+                {isOpponentTimeout ? (
+                  <button onClick={claimVictoryByTimeout} 
+                    className="w-full bg-red-600 hover:bg-red-700 text-white font-black text-sm sm:text-lg md:text-2xl py-3 sm:py-4 md:py-5 rounded-lg md:rounded-2xl shadow-sm md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden animate-pulse">
+                    상대방 응답 없음 (승리 처리)
+                  </button>
+                ) : (
+                  <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling || isSpectator} 
+                    className={`w-full bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-sm sm:text-lg md:text-2xl py-3 sm:py-4 md:py-5 rounded-lg md:rounded-2xl shadow-sm md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden
+                      ${isSpectator ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                    {isSpectator ? '관전 중입니다' : (isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말 이동하기') : (timeoutSecondsLeft > 0 ? `상대 턴 대기 (${timeoutSecondsLeft}초)` : '상대방 응답 없음'))}
+                  </button>
+                )}
                 
                 <div className="w-full bg-gray-50 p-1.5 md:p-3 mt-1.5 md:mt-4 rounded-lg md:rounded-xl border border-gray-200 flex gap-1.5 md:gap-3 items-center overflow-x-auto custom-scrollbar min-h-[44px] sm:min-h-[50px] md:min-h-[60px]">
                   {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-[10px] md:text-sm font-bold w-full text-center py-1">적립된 이동 횟수가 없습니다</span>}
@@ -1402,7 +1478,7 @@
             </div>
           </div>
 
-          {/* Right Area: Chat & Logs (모바일에서는 화면 밖 하단 배치, 필요시 스크롤해서 확인) */}
+          {/* Right Area: Chat & Logs */}
           <div className="w-full lg:w-80 h-[50dvh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
             <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
               <div className="p-2 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center gap-2 flex-shrink-0">게임 기록</div>
