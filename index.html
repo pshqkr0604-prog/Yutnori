@@ -415,6 +415,7 @@
         }
       };
 
+      // 게임 중 나가기를 해도 이어하기가 가능하도록 플레이어 유지
       const leaveRoom = async () => {
         if (!user || !activeRoomId || !roomData) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -427,15 +428,21 @@
               logs: arrayUnion(`${playerName}님이 관전을 종료했습니다.`)
            });
         } else {
-           const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
-           if (updatedPlayers.length === 0) {
-             await deleteDoc(roomRef);
+           // 게임이 로비 상태일 때만 방에서 완전히 퇴장(플레이어 배열에서 삭제)
+           if (roomData.status === 'lobby') {
+             const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
+             if (updatedPlayers.length === 0) {
+               await deleteDoc(roomRef);
+             } else {
+               await updateDoc(roomRef, {
+                 players: updatedPlayers,
+                 hostId: roomData.hostId === user.uid ? updatedPlayers[0].uid : roomData.hostId,
+                 logs: arrayUnion(`${playerName}님이 퇴장했습니다.`)
+               });
+             }
            } else {
-             await updateDoc(roomRef, {
-               players: updatedPlayers,
-               hostId: roomData.hostId === user.uid ? updatedPlayers[0].uid : roomData.hostId,
-               logs: arrayUnion(`${playerName}님이 퇴장했습니다.`)
-             });
+             // 로비 상태가 아닐 때(게임 중) 나가면 이어하기가 가능하도록 로컬 화면만 로비로 이동
+             // (이때 DB 상의 players에서는 삭제하지 않음)
            }
         }
         setActiveRoomId(null);
@@ -689,7 +696,7 @@
     }
 
     // ==========================================
-    // Character Select View
+    // Character Select View (1줄 배열 유지)
     // ==========================================
     function CharacterSelectView({ roomData, roomId, user, db, appId }) {
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
@@ -741,20 +748,21 @@
               <h2 className="text-lg md:text-xl font-bold text-blue-800 mb-4 md:mb-6 bg-blue-100 px-6 py-1.5 md:px-8 md:py-2 rounded-full border border-blue-200 shadow-sm flex items-center gap-2">
                 팀 A {ready.A && <span className="text-[10px] md:text-xs bg-blue-500 text-white px-2 py-0.5 md:py-1 rounded-full">준비완료</span>}
               </h2>
-              <div className="flex flex-wrap justify-center gap-3 md:gap-6 mb-4 md:mb-6">
+              {/* flex-wrap 제거하고, 무조건 한 줄에 배치 (너비 조절) */}
+              <div className="flex flex-row justify-center gap-2 md:gap-6 mb-4 md:mb-6 w-full">
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.A === charName;
                   const disabled = roomData.characters.B === charName || myTeam !== 'A' || ready.A || isSpectator;
                   return (
                     <div key={`A-${charName}`} onClick={() => !disabled && selectChar('A', charName)}
-                      className={`relative w-24 h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
+                      className={`relative w-20 h-28 sm:w-24 sm:h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white flex-shrink-0
                         ${isSelectedByTeam ? `scale-105 md:scale-110 shadow-xl border-blue-400` : 'border-gray-200 hover:border-gray-400'}
                         ${disabled && !isSelectedByTeam ? 'opacity-40 grayscale cursor-not-allowed' : ''}
                       `}>
                       {isSelectedByTeam && <CheckCircle2 className="absolute top-1 right-1 md:top-2 md:right-2 text-blue-500 w-5 h-5 md:w-6 md:h-6"/>}
                       <ChessPiece3D character={char} count={1} size="large" />
-                      <span className={`mt-3 md:mt-5 font-bold text-sm md:text-base ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
+                      <span className={`mt-3 md:mt-5 font-bold text-xs md:text-base ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
                     </div>
                   )
                 })}
@@ -771,20 +779,21 @@
               <h2 className="text-lg md:text-xl font-bold text-red-800 mb-4 md:mb-6 bg-red-100 px-6 py-1.5 md:px-8 md:py-2 rounded-full border border-red-200 shadow-sm flex items-center gap-2">
                 팀 B {ready.B && <span className="text-[10px] md:text-xs bg-red-500 text-white px-2 py-0.5 md:py-1 rounded-full">준비완료</span>}
               </h2>
-              <div className="flex flex-wrap justify-center gap-3 md:gap-6 mb-4 md:mb-6">
+              {/* flex-wrap 제거하고, 무조건 한 줄에 배치 (너비 조절) */}
+              <div className="flex flex-row justify-center gap-2 md:gap-6 mb-4 md:mb-6 w-full">
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.B === charName;
                   const disabled = roomData.characters.A === charName || myTeam !== 'B' || ready.B || isSpectator;
                   return (
                     <div key={`B-${charName}`} onClick={() => !disabled && selectChar('B', charName)}
-                      className={`relative w-24 h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
+                      className={`relative w-20 h-28 sm:w-24 sm:h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white flex-shrink-0
                         ${isSelectedByTeam ? `scale-105 md:scale-110 shadow-xl border-red-400` : 'border-gray-200 hover:border-gray-400'}
                         ${disabled && !isSelectedByTeam ? 'opacity-40 grayscale cursor-not-allowed' : ''}
                       `}>
                       {isSelectedByTeam && <CheckCircle2 className="absolute top-1 right-1 md:top-2 md:right-2 text-red-500 w-5 h-5 md:w-6 md:h-6"/>}
                       <ChessPiece3D character={char} count={1} size="large" />
-                      <span className={`mt-3 md:mt-5 font-bold text-sm md:text-base ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
+                      <span className={`mt-3 md:mt-5 font-bold text-xs md:text-base ${isSelectedByTeam ? 'text-gray-800' : 'text-gray-500'}`}>{char.name}</span>
                     </div>
                   )
                 })}
@@ -802,23 +811,28 @@
     }
 
     // ==========================================
-    // Turn Select View 
+    // Turn Select View (중앙 정렬 및 아무나 선공 클릭 가능하도록 수정)
     // ==========================================
     function TurnSelectView({ roomData, roomId, user, db, appId }) {
-      const isHost = roomData.hostId === user.uid;
+      const isPlayer = roomData.players.some(p => p.uid === user.uid && !p.isBot);
       const turnData = roomData.turnData || {};
 
       const handlePick = async (idx) => {
-        if (!isHost || turnData.selected !== undefined) return;
+        // 누구나(관전자 제외) 먼저 카드를 클릭하면 선택됨
+        if (!isPlayer || turnData.selected !== undefined) return;
         const isWin = idx === turnData.winningIdx;
-        const hostTeam = roomData.players.find(p => p.uid === roomData.hostId)?.team || 'A';
-        const oppTeam = hostTeam === 'A' ? 'B' : 'A';
-        const firstTeam = isWin ? hostTeam : oppTeam;
+        
+        // 클릭한 사람의 팀 확인
+        const clickerTeam = roomData.players.find(p => p.uid === user.uid)?.team || 'A';
+        const oppTeam = clickerTeam === 'A' ? 'B' : 'A';
+        
+        // 당첨 카드면 내 팀이 선공, 꽝이면 상대가 선공
+        const firstTeam = isWin ? clickerTeam : oppTeam;
 
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
           'turnData.selected': idx,
           'turnData.firstTeam': firstTeam,
-          logs: arrayUnion(`방장이 카드를 뽑았습니다. ${firstTeam === 'A' ? '팀 A' : '팀 B'}가 선공을 잡았습니다!`)
+          logs: arrayUnion(`카드가 선택되었습니다! ${firstTeam === 'A' ? '팀 A' : '팀 B'}가 선공을 잡았습니다!`)
         });
 
         setTimeout(async () => {
@@ -831,12 +845,12 @@
       };
 
       return (
-        <div className="h-full flex flex-col items-center justify-center bg-[#f3f4f6] p-4 md:p-6 relative overflow-hidden">
+        <div className="flex-1 w-full h-full flex flex-col items-center justify-center bg-[#f3f4f6] p-4 md:p-6 relative overflow-hidden min-h-[100dvh]">
           <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter">선후공 결정</h1>
           <p className="text-gray-500 mb-8 md:mb-16 text-sm md:text-lg font-medium text-center">
-            {isHost ? '방장님, 카드를 하나 선택하여 운명을 시험하세요.' : '방장이 선후공 카드를 고르고 있습니다...'}
+            {isPlayer ? '카드를 하나 먼저 선택하여 운명을 시험하세요.' : '플레이어들이 선후공 카드를 고르고 있습니다...'}
           </p>
-          <div className="flex flex-row gap-6 md:gap-12 perspective-[1000px]">
+          <div className="flex flex-row gap-6 md:gap-12 perspective-[1000px] justify-center items-center w-full">
             {[0, 1].map(idx => {
               const isSelected = turnData.selected === idx;
               const isRevealed = turnData.selected !== undefined;
@@ -845,7 +859,7 @@
               return (
                 <div key={idx} onClick={() => handlePick(idx)}
                      className={`relative w-36 h-48 md:w-48 md:h-64 cursor-pointer transition-all duration-700
-                       ${!isRevealed && isHost ? 'hover:-translate-y-2 md:hover:-translate-y-4 hover:shadow-2xl' : ''}
+                       ${!isRevealed && isPlayer ? 'hover:-translate-y-2 md:hover:-translate-y-4 hover:shadow-2xl' : ''}
                        ${isSelected ? 'scale-105 md:scale-110 z-10' : 'scale-100'}
                      `}
                      style={{ transformStyle: 'preserve-3d', WebkitTransformStyle: 'preserve-3d', transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
@@ -1193,10 +1207,10 @@
             </div>
 
             {/* Board Container (깔끔한 흰색 카드 컨테이너 복구 & 찌그러짐 방지) */}
-            <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 overflow-hidden items-center justify-center">
+            <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
                
                {/* 상대편 대기 말 영역 (모던 테마 유지) */}
-               <div className="w-full max-w-[400px] sm:max-w-[450px] flex justify-between items-end mb-2 md:mb-4 px-2 flex-shrink-0">
+               <div className="w-full max-w-[340px] sm:max-w-[450px] flex justify-between items-end mb-2 md:mb-4 px-2 flex-shrink-0">
                   <div className="flex items-center gap-1.5">
                      <div className={`w-2 h-2 rounded-full ${oppTeam === 'A' ? 'bg-blue-500' : 'bg-red-500'}`}></div>
                      <span className="text-[10px] md:text-xs font-bold text-gray-500">상대 대기 말 ({oppTeam}팀)</span>
@@ -1211,8 +1225,8 @@
                </div>
 
                {/* 실제 윷판 영역 (데스크탑 깔끔한 옛날 회색/흰색 톤 & 1:1 완벽 정방형 비율 고정) */}
-               <div className="flex-1 w-full flex items-center justify-center min-h-0">
-                 <div className="relative w-full aspect-square max-w-[400px] sm:max-w-[450px] max-h-[400px] sm:max-h-[450px] mx-auto flex-shrink-0">
+               <div className="flex-1 w-full flex items-center justify-center min-h-0 relative mt-4 md:mt-0">
+                 <div className="relative w-full aspect-square max-w-[300px] sm:max-w-[400px] md:max-w-[450px] max-h-[300px] sm:max-h-[400px] md:max-h-[450px] mx-auto flex-shrink-0">
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
                        <rect x="0" y="0" width="100" height="100" fill="none" stroke="#9ca3af" strokeWidth="0.5" />
                        <line x1="0" y1="0" x2="100" y2="100" stroke="#9ca3af" strokeWidth="0.5" />
