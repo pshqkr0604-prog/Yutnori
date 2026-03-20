@@ -131,7 +131,7 @@
         if (password.length < 6) return alert("비밀번호는 6자리 이상이어야 합니다.");
         
         setLoading(true);
-        const email = `${id}@yutnori.game`; // 아이디를 이메일 형식으로 변환하여 사용
+        const email = `${id}@yutnori.game`; 
         
         try {
           if (isLogin) {
@@ -287,14 +287,24 @@
       const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
       // 사용자 전적 상태
       const [userStats, setUserStats] = useState({ wins: 0, losses: 0, versus: {} });
+
+      // 이모티콘 팝업 애니메이션을 위한 상태 추가
+      const [activeEmoticon, setActiveEmoticon] = useState(null);
+      const lastEmoticonEventId = useRef(null);
       
       // 사용자 인증 상태 추적
       useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-          setUser(currentUser);
           if (currentUser) {
-             setCurrentView(prev => prev === 'auth' ? 'lobby' : prev);
+            // 핵심 수정: 과거에 캐시로 남아있는 '익명 계정'일 경우 강제로 로그아웃시켜 접속 차단
+            if (currentUser.isAnonymous) {
+              signOut(auth);
+            } else {
+              setUser(currentUser);
+              setCurrentView(prev => prev === 'auth' ? 'lobby' : prev);
+            }
           } else {
+             setUser(null);
              setCurrentView('auth');
              setActiveRoomId(null);
              setRoomData(null);
@@ -303,6 +313,17 @@
         });
         return () => unsubscribe();
       }, []);
+
+      // 이모티콘 팝업 표시 감지
+      useEffect(() => {
+        if (roomData?.emoticonEvent && roomData.emoticonEvent.id !== lastEmoticonEventId.current) {
+          lastEmoticonEventId.current = roomData.emoticonEvent.id;
+          setActiveEmoticon(roomData.emoticonEvent);
+          setTimeout(() => {
+            setActiveEmoticon(null);
+          }, 2000); // 2초 후 사라짐
+        }
+      }, [roomData?.emoticonEvent]);
 
       // 사용자 접속 상태 갱신 (30초마다)
       useEffect(() => {
@@ -572,7 +593,23 @@
 
       // 레이아웃 전체 스크롤 관리 
       return (
-        <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
+        <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row relative">
+          
+          {/* 전역 이모티콘 팝업 오버레이 */}
+          {activeEmoticon && (
+            <div className="fixed inset-0 z-[200] pointer-events-none flex items-center justify-center">
+              <div className="flex flex-col items-center animate-[textPop_0.4s_cubic-bezier(0.175,0.885,0.32,1.275)_forwards]">
+                <span className="bg-black/70 text-amber-400 px-4 py-1.5 rounded-full text-sm md:text-base font-bold mb-3 shadow-lg border border-white/20 backdrop-blur-sm">
+                  📢 {activeEmoticon.sender}
+                </span>
+                <h2 className="text-5xl md:text-7xl font-black text-white text-center px-4 tracking-tighter" 
+                    style={{ textShadow: '0 4px 20px rgba(0,0,0,0.8), -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000' }}>
+                  {activeEmoticon.text}
+                </h2>
+              </div>
+            </div>
+          )}
+
           {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
           {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} db={db} appId={GLOBAL_APP_ID} /></div>}
           {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} /></div>}
@@ -1637,6 +1674,10 @@
         if (!db) return;
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`), {
           text: text, uid: myPlayerInfo.uid, name: myPlayerInfo.name, team: myPlayerInfo.team, mode: chatMode, timestamp: Date.now()
+        });
+        // 팝업 애니메이션을 위해 roomData의 emoticonEvent 필드 업데이트
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+          emoticonEvent: { id: Date.now(), text: text, sender: myPlayerInfo.name }
         });
       };
 
