@@ -52,7 +52,7 @@
     import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
-    import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, arrayUnion, query, orderBy, serverTimestamp, deleteDoc, addDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, arrayUnion, query, orderBy, serverTimestamp, deleteDoc, addDoc, increment, getDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
     // --- Lucide 아이콘 대체용 인라인 SVG 컴포넌트 ---
     const Play = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>;
@@ -63,7 +63,7 @@
     const Trash2 = ({ size=16, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>;
 
     // ==========================================
-    // Firebase Initialization (캔버스 변수 원천 차단, 무조건 사용자 DB만 사용)
+    // Firebase Initialization
     // ==========================================
     const firebaseConfig = {
       apiKey: "AIzaSyDPbR6XUdb2CR5G0WhLTWINPIpRGTq4VWc",
@@ -79,7 +79,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // 데이터베이스 방 목록 저장 폴더명 (초기화를 위해 v3로 변경)
+    // 데이터베이스 방 목록 저장 폴더명
     const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
 
     // --- Yut Board Logic ---
@@ -155,8 +155,8 @@
       };
 
       return (
-        <div className="h-screen flex items-center justify-center bg-[#f3f4f6] p-4 md:p-6">
-          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-200">
+        <div className="h-full w-full flex items-center justify-center bg-[#f3f4f6] p-4 md:p-6 overflow-y-auto">
+          <div className="bg-white p-6 md:p-8 rounded-2xl shadow-xl max-w-md w-full border border-gray-200 m-auto">
             <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2 text-center tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
             <p className="text-gray-500 text-sm md:text-base text-center mb-6 md:mb-8 font-medium">아이디와 비밀번호로 접속하세요</p>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -187,30 +187,32 @@
 
     function ChessPiece3D({ character, count, size = "normal" }) {
       if (!character) return null;
-      const isLarge = size === 'large';
-      const scaleClass = isLarge ? 'scale-[1.5] md:scale-[1.8] origin-bottom' : 'scale-100 md:scale-110 origin-bottom';
+      // 반응형 크기 조절 (모바일에서 좁은 영역 확보를 위해 scale 최적화)
+      let scaleClass = 'scale-75 md:scale-100 origin-bottom';
+      if (size === 'large') scaleClass = 'scale-110 md:scale-[1.8] origin-bottom';
+      if (size === 'small') scaleClass = 'scale-50 md:scale-75 origin-bottom';
 
       return (
-        <div className={`relative flex flex-col items-center justify-end w-8 md:w-10 h-12 md:h-16 pointer-events-none filter drop-shadow-[0_5px_5px_rgba(0,0,0,0.4)] transform ${scaleClass}`}>
+        <div className={`relative flex flex-col items-center justify-end w-10 h-16 pointer-events-none filter drop-shadow-[0_5px_5px_rgba(0,0,0,0.4)] transform ${scaleClass}`}>
           <div className="relative z-20 flex flex-col items-center mb-[-4px]">
-            <div className="w-5 md:w-6 h-2 md:h-3 rounded-t-md border border-black/40 shadow-inner" style={{ background: character.bgLight }}></div>
-            <div className="w-4 md:w-5 h-4 md:h-5 bg-[#fcd34d] rounded-full border border-[#b45309] flex items-center justify-center z-10 shadow-sm">
-              <div className="flex gap-0.5 md:gap-1 mt-0.5 md:mt-1">
+            <div className="w-6 h-3 rounded-t-md border border-black/40 shadow-inner" style={{ background: character.bgLight }}></div>
+            <div className="w-5 h-5 bg-[#fcd34d] rounded-full border border-[#b45309] flex items-center justify-center z-10 shadow-sm">
+              <div className="flex gap-1 mt-1">
                 <div className="w-1 h-1 bg-black rounded-full"></div>
                 <div className="w-1 h-1 bg-black rounded-full"></div>
               </div>
             </div>
           </div>
-          <div className="relative z-10 w-6 md:w-8 h-6 md:h-8 rounded-t-xl border-x border-t border-black/40 shadow-inner flex flex-col items-center justify-end pb-1"
+          <div className="relative z-10 w-8 h-8 rounded-t-xl border-x border-t border-black/40 shadow-inner flex flex-col items-center justify-end pb-1"
                style={{ background: `linear-gradient(to bottom, ${character.bgLight}, ${character.bgDark})` }}>
-            <span className="text-[7px] md:text-[9px] font-black text-white/90 drop-shadow-md">{character.hanja}</span>
+            <span className="text-[9px] font-black text-white/90 drop-shadow-md">{character.hanja}</span>
           </div>
           <div className="relative z-0 flex flex-col items-center w-full">
-            <div className="w-7 md:w-9 h-2 md:h-2.5 rounded-[50%] bg-[#475569] border border-[#1e293b] -mb-1 shadow-inner"></div>
-            <div className="w-9 md:w-11 h-2.5 md:h-3.5 rounded-[50%] bg-[#1e293b] border-2 border-black shadow-[0_3px_5px_rgba(0,0,0,0.6)]"></div>
+            <div className="w-9 h-2.5 rounded-[50%] bg-[#475569] border border-[#1e293b] -mb-1 shadow-inner"></div>
+            <div className="w-11 h-3.5 rounded-[50%] bg-[#1e293b] border-2 border-black shadow-[0_3px_5px_rgba(0,0,0,0.6)]"></div>
           </div>
           {count > 1 && (
-            <div className="absolute -bottom-1 -right-2 md:-right-3 z-30 bg-gradient-to-br from-yellow-300 to-yellow-600 text-yellow-950 font-black text-[8px] md:text-[10px] w-4 md:w-5 h-4 md:h-5 rounded-full flex items-center justify-center border border-white shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
+            <div className="absolute -bottom-1 -right-3 z-30 bg-gradient-to-br from-yellow-300 to-yellow-600 text-yellow-950 font-black text-[10px] w-5 h-5 rounded-full flex items-center justify-center border-2 border-white shadow-[0_2px_4px_rgba(0,0,0,0.5)]">
               x{count}
             </div>
           )}
@@ -284,6 +286,8 @@
       const [activeRoomId, setActiveRoomId] = useState(null);
       const [roomData, setRoomData] = useState(null);
       const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
+      // 사용자 전적 상태
+      const [userStats, setUserStats] = useState({ wins: 0, losses: 0 });
       
       // 사용자 인증 상태 추적
       useEffect(() => {
@@ -295,12 +299,27 @@
              setCurrentView('auth');
              setActiveRoomId(null);
              setRoomData(null);
+             setUserStats({ wins: 0, losses: 0 });
           }
         });
         return () => unsubscribe();
       }, []);
 
-      // 방 목록 불러오기 (오류 메시지 명확화)
+      // 사용자 전적(승률) 불러오기
+      useEffect(() => {
+        if (!user || !db) return;
+        const userRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_users', user.uid);
+        const unsubscribe = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserStats(docSnap.data());
+          } else {
+            setDoc(userRef, { wins: 0, losses: 0 });
+          }
+        });
+        return () => unsubscribe();
+      }, [user]);
+
+      // 방 목록 불러오기
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -308,7 +327,7 @@
           setRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished'));
         }, (error) => {
           console.error(error);
-          setAuthError("방 목록을 불러올 수 없습니다. Firestore Database의 규칙(Rules)이 제대로 설정되었는지 확인하세요.");
+          setAuthError("방 목록을 불러올 수 없습니다.");
         });
         return () => unsubscribe();
       }, [user]);
@@ -394,7 +413,6 @@
         setCurrentView('lobby');
       };
 
-      // 방 삭제 함수
       const deleteRoom = async (roomId) => {
         if (!user) return;
         if (!confirm("정말 이 방을 삭제하시겠습니까? (방장 권한)")) return;
@@ -432,22 +450,18 @@
           <div className="bg-white p-8 rounded-2xl shadow-xl border-2 border-red-500 max-w-lg">
             <h1 className="text-2xl font-black text-red-600 mb-4">접속 실패</h1>
             <p className="text-gray-700 bg-gray-100 p-4 rounded-lg break-words mb-6 font-mono text-sm">{authError}</p>
-            <p className="text-gray-600 font-bold mb-2">💡 해결 방법:</p>
-            <ol className="text-left text-gray-500 text-sm space-y-2 list-decimal list-inside">
-              <li>파이어베이스 콘솔의 <b>Authentication(인증) &gt; Sign-in method</b>에서 <b>'이메일/비밀번호'</b> 로그인이 켜져 있는지 확인하세요.</li>
-              <li><b>Firestore Database &gt; 규칙(Rules)</b>이 올바르게 저장되었는지 확인하세요.</li>
-            </ol>
           </div>
         </div>
       );
       if (!user && currentView !== 'auth') return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버 연결 중...</div>;
 
+      // 레이아웃 스크롤 방지를 위해 전체 뷰를 100dvh로 감싸고 자식 요소 오버플로우 관리
       return (
-        <div className="min-h-screen bg-[#f3f4f6] font-sans text-gray-800">
+        <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-hidden flex flex-col">
           {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
-          {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} />}
-          {currentView === 'room' && <WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} />}
-          {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} /></div>}
+          {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} /></div>}
+          {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
           {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
           {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} />}
         </div>
@@ -457,12 +471,15 @@
     // ==========================================
     // Lobby View
     // ==========================================
-    function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin, user, onDelete, auth }) {
+    function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin, user, onDelete, auth, userStats }) {
       const handleLogout = async () => {
          if(confirm("로그아웃 하시겠습니까?")) {
            await signOut(auth);
          }
       }
+
+      const totalGames = (userStats?.wins || 0) + (userStats?.losses || 0);
+      const winRate = totalGames === 0 ? 0 : Math.round(((userStats.wins || 0) / totalGames) * 100);
 
       return (
         <div className="max-w-4xl mx-auto p-4 md:p-6 pt-10 md:pt-20 relative">
@@ -473,16 +490,29 @@
             <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter drop-shadow-sm">실시간 윷놀이</h1>
             <p className="text-gray-500 font-medium text-sm md:text-lg">가장 리얼한 온라인 윷놀이 보드게임</p>
           </div>
-          <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 mb-6 md:mb-8 max-w-md mx-auto shadow-sm">
-            <label className="block text-xs md:text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
-            <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={10}
-              className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-50 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-2xl mx-auto mb-6 md:mb-8">
+            <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center">
+              <label className="block text-xs md:text-sm font-bold text-gray-700 mb-2">내 닉네임</label>
+              <input type="text" value={playerName} onChange={(e) => setPlayerName(e.target.value)} maxLength={10}
+                className="w-full px-3 md:px-4 py-2 md:py-3 bg-gray-50 border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-all text-sm md:text-base" />
+            </div>
+            
+            <div className="bg-white p-4 md:p-6 rounded-xl md:rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-center items-center">
+               <h2 className="text-xs md:text-sm font-bold text-gray-500 mb-2">내 전적 (자동 기록)</h2>
+               <div className="flex justify-center items-end gap-6">
+                 <div className="text-center"><span className="block text-2xl md:text-3xl font-black text-blue-600">{userStats?.wins || 0}</span><span className="text-[10px] md:text-xs font-bold text-gray-400">승</span></div>
+                 <div className="text-center"><span className="block text-2xl md:text-3xl font-black text-red-600">{userStats?.losses || 0}</span><span className="text-[10px] md:text-xs font-bold text-gray-400">패</span></div>
+                 <div className="text-center ml-2 pl-6 border-l border-gray-200"><span className="block text-2xl md:text-3xl font-black text-amber-500">{winRate}%</span><span className="text-[10px] md:text-xs font-bold text-gray-400">승률</span></div>
+               </div>
+            </div>
           </div>
+
           <div className="flex flex-col sm:flex-row justify-between items-center mb-4 md:mb-6 gap-4">
             <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2 w-full sm:w-auto"><Play className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /> 게임 방 목록</h2>
             <button onClick={onCreate} className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white px-6 py-3 rounded-lg md:rounded-xl font-bold shadow-md transition-all active:scale-95 text-sm md:text-base">방 만들기</button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5 pb-12">
             {rooms.length === 0 ? (
               <div className="col-span-full text-center py-12 md:py-16 text-gray-400 bg-white rounded-xl md:rounded-2xl border border-dashed border-gray-300 text-sm md:text-base">현재 개설된 방이 없습니다. 직접 만들어보세요!</div>
             ) : (
@@ -520,7 +550,7 @@
       const isHost = roomData.hostId === user.uid;
 
       return (
-        <div className="max-w-4xl mx-auto p-4 md:p-6 pt-6 md:pt-12">
+        <div className="max-w-4xl mx-auto p-4 md:p-6 pt-6 md:pt-12 pb-12">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 bg-white p-4 md:p-6 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 gap-4 sm:gap-0">
             <div><h1 className="text-2xl md:text-3xl font-black text-gray-800">{roomData.name}</h1><p className="text-gray-500 mt-1 text-sm md:text-base">대기실 (최대 3:3)</p></div>
             <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors text-sm md:text-base w-full sm:w-auto justify-center sm:justify-start border border-gray-200 sm:border-none"><LogOut size={16} className="md:w-[18px] md:h-[18px]"/> 나가기</button>
@@ -609,10 +639,10 @@
       }, [ready.A, ready.B, roomData.status, isHost, roomId, db, appId]);
 
       return (
-        <div className="h-screen flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 overflow-y-auto">
+        <div className="flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 min-h-full pb-12">
           <div className="mt-8 sm:mt-0 text-center">
             <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
-            <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">자신의 팀 말을 선택하고 준비를 완료해주세요. 양 팀 모두 준비되면 게임이 시작됩니다.</p>
+            <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">자신의 팀 말을 선택하고 준비를 완료해주세요. 양 팀 모두 준비되면 시작됩니다.</p>
           </div>
           
           <div className="flex flex-col md:flex-row gap-6 lg:gap-16 mb-8 w-full max-w-4xl justify-center items-center md:items-start">
@@ -710,7 +740,7 @@
       };
 
       return (
-        <div className="h-screen flex flex-col items-center justify-center bg-[#f3f4f6] p-4 md:p-6 relative overflow-hidden">
+        <div className="h-full flex flex-col items-center justify-center bg-[#f3f4f6] p-4 md:p-6 relative overflow-hidden">
           <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter">선후공 결정</h1>
           <p className="text-gray-500 mb-8 md:mb-16 text-sm md:text-lg font-medium text-center">
             {isHost ? '방장님, 카드를 하나 선택하여 운명을 시험하세요.' : '방장이 선후공 카드를 고르고 있습니다...'}
@@ -772,12 +802,13 @@
       const lastRollingEventId = useRef(null);
       
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
-      const myTeam = myPlayerInfo?.team;
+      const myTeam = myPlayerInfo?.team || 'A';
+      const oppTeam = myTeam === 'A' ? 'B' : 'A';
       const isHost = roomData.hostId === user.uid;
 
       const isBotTurn = roomData.players.filter(p => p.team === roomData.turn).every(p => p.isBot);
       const isMyTurn = (roomData.turn === myTeam) || (isHost && isBotTurn);
-      const playingTeam = isMyTurn ? roomData.turn : (myTeam || 'A');
+      const playingTeam = isMyTurn ? roomData.turn : myTeam;
 
       useEffect(() => {
         if (!db || !roomId) return;
@@ -888,8 +919,8 @@
         });
 
         let extraTurnFromCatch = false;
-        const oppTeam = playingTeam === 'A' ? 'B' : 'A';
-        let updatedOppPieces = [...roomData.pieces[oppTeam]];
+        const oppPlayingTeam = playingTeam === 'A' ? 'B' : 'A';
+        let updatedOppPieces = [...roomData.pieces[oppPlayingTeam]];
 
         if (destPos > 0 && destPos < 30) {
           const caughtPieces = updatedOppPieces.filter(p => p.pos === destPos);
@@ -913,7 +944,7 @@
           turnMsg = `상대 말을 잡았습니다! 한 번 더 던지세요.`;
         }
 
-        const piecesUpdate = { [playingTeam]: updatedMyPieces, [oppTeam]: updatedOppPieces };
+        const piecesUpdate = { [playingTeam]: updatedMyPieces, [oppPlayingTeam]: updatedOppPieces };
         const isWin = updatedMyPieces.every(p => p.pos === 30);
         
         const updateData = {
@@ -924,6 +955,24 @@
         if (isWin) {
           updateData.status = 'finished';
           updateData.logs = arrayUnion(`🎉 ${playingTeam === 'A' ? '팀 A' : '팀 B'}가 승리했습니다! 게임 종료.`);
+
+          // [전적 업데이트 로직] 
+          roomData.players.forEach(async (p) => {
+             if (p.isBot) return;
+             const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_users', p.uid);
+             const isWinner = p.team === playingTeam;
+             
+             try {
+               const userSnap = await getDoc(userRef);
+               if (!userSnap.exists()) {
+                  await setDoc(userRef, { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0 });
+               } else {
+                  await updateDoc(userRef, isWinner ? { wins: increment(1) } : { losses: increment(1) });
+               }
+             } catch(err) {
+               console.error("전적 업데이트 에러:", err);
+             }
+          });
         }
 
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), updateData);
@@ -974,9 +1023,10 @@
       };
 
       const myChar = CHARACTERS[roomData.characters[playingTeam]];
+      const oppChar = CHARACTERS[roomData.characters[oppTeam]];
 
       return (
-        <div className="flex flex-col lg:flex-row h-screen w-full overflow-hidden bg-[#f3f4f6]">
+        <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden bg-[#f3f4f6]">
           
           {/* --- 완벽한 3D 반원통 윷가락 렌더링 --- */}
           {isRolling && (
@@ -1004,12 +1054,13 @@
             </div>
           )}
 
-          {/* Left Area: Board & Controls (모바일에서는 위쪽, PC에서는 왼쪽) */}
-          <div className="flex-1 flex flex-col p-3 md:p-6 relative w-full lg:max-w-5xl mx-auto min-h-0 overflow-y-auto custom-scrollbar">
+          {/* Left Area: Board & Controls (모바일 1화면 핏 유지) */}
+          <div className="flex-1 flex flex-col p-2 md:p-6 relative w-full lg:max-w-5xl mx-auto min-h-0 overflow-hidden">
+            
             {/* Header */}
-            <div className="flex justify-between items-center mb-4 md:mb-6 bg-white p-3 md:p-4 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 flex-shrink-0">
+            <div className="flex justify-between items-center mb-2 md:mb-4 bg-white p-2.5 md:p-4 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 flex-shrink-0">
               <div>
-                <h2 className="text-lg md:text-2xl font-black text-gray-800 truncate max-w-[150px] sm:max-w-[300px]">{roomData.name}</h2>
+                <h2 className="text-sm md:text-2xl font-black text-gray-800 truncate max-w-[150px] sm:max-w-[300px]">{roomData.name}</h2>
                 <div className="text-[10px] md:text-sm font-bold flex items-center gap-1.5 md:gap-3 mt-1">
                   <span className="text-gray-500 hidden sm:inline">상태:</span>
                   {roomData.status === 'finished' ? (
@@ -1017,7 +1068,7 @@
                   ) : (
                     <div className="flex items-center gap-1 md:gap-2">
                        <span className={`px-1.5 py-0.5 md:px-3 md:py-1 rounded text-white ${roomData.turn === 'A' ? 'bg-blue-600 shadow-sm' : 'bg-gray-400'}`}>팀 A</span>
-                       <span className="text-gray-400 font-black text-xs md:text-sm">VS</span>
+                       <span className="text-gray-400 font-black text-[10px] md:text-sm">VS</span>
                        <span className={`px-1.5 py-0.5 md:px-3 md:py-1 rounded text-white ${roomData.turn === 'B' ? 'bg-red-600 shadow-sm' : 'bg-gray-400'}`}>팀 B</span>
                        {isMyTurn && <span className="ml-1 md:ml-2 animate-pulse text-amber-600 text-[9px] md:text-xs font-black border border-amber-400 px-1.5 md:px-2 py-0.5 rounded-full whitespace-nowrap">내 차례!</span>}
                     </div>
@@ -1029,111 +1080,123 @@
               </button>
             </div>
 
-            {/* Board Area */}
-            <div className="flex-1 flex items-center justify-center min-h-[280px] md:min-h-[400px] my-2 md:my-0">
-              <div className="relative w-full max-w-[320px] md:max-w-[450px] aspect-square">
-                <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-                   <rect x="0" y="0" width="100" height="100" fill="none" stroke="#9ca3af" strokeWidth="0.5" />
-                   <line x1="0" y1="0" x2="100" y2="100" stroke="#9ca3af" strokeWidth="0.5" />
-                   <line x1="100" y1="0" x2="0" y2="100" stroke="#9ca3af" strokeWidth="0.5" />
-                </svg>
-                {Object.keys(BOARD_POSITIONS).map(pos => {
-                  const { x, y } = BOARD_POSITIONS[pos];
-                  const isCorner = ['5', '10', '15', '20'].includes(pos);
-                  const isCenter = pos === '23';
-                  let isDestination = false;
-                  if (selectedPiece && roomData.yutQueue.length > 0) {
-                     const targetPiece = roomData.pieces[playingTeam].find(p => p.id === selectedPiece.id);
-                     if (targetPiece) {
-                        const predictedPos = calculateDestination(targetPiece.pos, YUT_RESULTS[roomData.yutQueue[0]].steps);
-                        if (predictedPos.toString() === pos) isDestination = true;
-                     }
-                  }
-                  return (
-                    <div key={`bg-${pos}`} 
-                      className={`absolute rounded-full bg-white border border-gray-400 flex items-center justify-center transition-all shadow-sm transform -translate-x-1/2 -translate-y-1/2
-                        ${isCorner || isCenter ? 'w-6 h-6 md:w-8 md:h-8 border-[2px]' : 'w-3 h-3 md:w-4 md:h-4'}
-                        ${isDestination ? 'ring-2 md:ring-4 ring-amber-400 bg-amber-100 scale-125 md:scale-150 z-0 border-amber-500' : ''}
-                      `}
-                      style={{ left: `${x}%`, top: `${y}%` }}
-                    >
-                      {isCenter && <div className="w-2 h-2 md:w-3 md:h-3 bg-gray-400 rounded-full"></div>}
+            {/* Board Container */}
+            <div className="flex-1 flex flex-col items-center justify-center min-h-0 bg-white rounded-xl md:rounded-3xl shadow-sm border border-gray-200 p-2 md:p-6 overflow-hidden">
+               {/* 상대편 대기 말 영역 추가 */}
+               <div className="flex justify-between items-end w-full mb-1 md:mb-3 px-2 flex-shrink-0">
+                  <div className="flex items-center gap-1.5">
+                     <div className={`w-2 h-2 rounded-full ${oppTeam === 'A' ? 'bg-blue-500' : 'bg-red-500'}`}></div>
+                     <span className="text-[10px] md:text-sm font-bold text-gray-500">상대 대기 말 ({oppTeam}팀)</span>
+                  </div>
+                  <div className="flex gap-1 md:gap-3">
+                     {roomData.pieces[oppTeam].map(p => (
+                        <div key={p.id} className={`w-5 h-8 md:w-8 md:h-12 flex items-end justify-center ${p.pos > 0 ? 'opacity-30 grayscale' : ''}`}>
+                           <ChessPiece3D character={oppChar} count={1} size="small" />
+                        </div>
+                     ))}
+                  </div>
+               </div>
+
+               {/* 실제 윷판 영역 (디자인 스킨 적용) */}
+               <div className="flex-1 w-full flex items-center justify-center min-h-0 relative">
+                  <div className="relative h-full aspect-square max-w-full bg-[#f4dfb6] border-[4px] md:border-[8px] border-[#a0683a] rounded-xl md:rounded-3xl shadow-[inset_0_0_20px_rgba(160,104,58,0.3)] p-4 md:p-8 flex items-center justify-center">
+                    <div className="relative w-full h-full max-w-[400px]">
+                      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
+                         <rect x="0" y="0" width="100" height="100" fill="none" stroke="#8b5a2b" strokeWidth="1" />
+                         <line x1="0" y1="0" x2="100" y2="100" stroke="#8b5a2b" strokeWidth="1" />
+                         <line x1="100" y1="0" x2="0" y2="100" stroke="#8b5a2b" strokeWidth="1" />
+                      </svg>
+                      {Object.keys(BOARD_POSITIONS).map(pos => {
+                        const { x, y } = BOARD_POSITIONS[pos];
+                        const isCorner = ['5', '10', '15', '20'].includes(pos);
+                        const isCenter = pos === '23';
+                        let isDestination = false;
+                        if (selectedPiece && roomData.yutQueue.length > 0) {
+                           const targetPiece = roomData.pieces[playingTeam].find(p => p.id === selectedPiece.id);
+                           if (targetPiece) {
+                              const predictedPos = calculateDestination(targetPiece.pos, YUT_RESULTS[roomData.yutQueue[0]].steps);
+                              if (predictedPos.toString() === pos) isDestination = true;
+                           }
+                        }
+                        return (
+                          <div key={`bg-${pos}`} 
+                            className={`absolute rounded-full bg-[#fdfbf7] border-2 border-[#8b5a2b] flex items-center justify-center transition-all shadow-sm transform -translate-x-1/2 -translate-y-1/2
+                              ${isCorner || isCenter ? 'w-5 h-5 md:w-8 md:h-8 border-[3px]' : 'w-3 h-3 md:w-5 md:h-5'}
+                              ${isDestination ? 'ring-2 md:ring-4 ring-amber-400 bg-amber-100 scale-125 md:scale-150 z-0 border-amber-500' : ''}
+                            `}
+                            style={{ left: `${x}%`, top: `${y}%` }}
+                          >
+                            {isCenter && <div className="w-1.5 h-1.5 md:w-3 md:h-3 bg-gray-400 rounded-full"></div>}
+                          </div>
+                        )
+                      })}
+                      {renderPiecesOnBoard()}
+                      <div className="absolute -bottom-5 -right-5 md:-bottom-10 md:-right-10 text-gray-500 font-bold bg-white px-2 py-0.5 md:px-4 md:py-1.5 rounded-full shadow-sm border border-[#a0683a] text-[8px] md:text-xs">출발/도착</div>
                     </div>
-                  )
-                })}
-                {renderPiecesOnBoard()}
-                <div className="absolute -bottom-6 -right-6 md:-bottom-10 md:-right-10 text-gray-500 font-bold bg-white px-2 py-1 md:px-4 md:py-1.5 rounded-full shadow-sm border border-gray-200 text-[8px] md:text-xs">출발/도착</div>
-              </div>
+                  </div>
+               </div>
             </div>
 
             {/* Bottom Controls */}
-            <div className="bg-white mt-4 md:mt-8 rounded-2xl md:rounded-3xl shadow-sm border border-gray-200 p-3 md:p-6 flex flex-col sm:flex-row gap-4 md:gap-8 flex-shrink-0">
-              {/* 대기말 영역 */}
-              <div className="flex-1 sm:flex-[0.8] flex flex-col justify-center gap-2 sm:border-r border-gray-200 sm:pr-4 md:pr-8">
-                <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-2 text-sm md:text-base">
+            <div className="bg-white mt-2 md:mt-4 rounded-xl md:rounded-3xl shadow-sm border border-gray-200 p-2 md:p-6 flex flex-row gap-2 md:gap-8 flex-shrink-0">
+              {/* 내 대기 말 영역 */}
+              <div className="flex flex-col justify-center border-r border-gray-200 pr-2 md:pr-8 w-1/3 sm:w-auto">
+                <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2 text-[10px] md:text-base">
                   내 대기 말
-                  {isBotTurn && isMyTurn && <span className="text-purple-600 text-[10px] md:text-xs ml-1 md:ml-2 font-bold bg-purple-100 px-1.5 md:px-2 py-0.5 rounded">컴퓨터 조작중</span>}
+                  {isBotTurn && isMyTurn && <span className="text-purple-600 text-[8px] md:text-xs font-bold bg-purple-100 px-1 md:px-2 py-0.5 rounded">조작중</span>}
                 </h3>
-                <div className="flex flex-wrap gap-2 md:gap-4 justify-start sm:justify-start">
+                <div className="flex flex-wrap gap-1 md:gap-4 justify-start">
                   {roomData.pieces[playingTeam].map(p => (
                     <div key={p.id} onClick={() => p.pos === 0 && handlePieceClick(playingTeam, p.id)}
-                      className={`relative cursor-pointer transition-transform w-8 h-12 md:w-12 md:h-16 flex items-end justify-center
+                      className={`relative cursor-pointer transition-transform w-6 h-10 md:w-12 md:h-16 flex items-end justify-center
                         ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:-translate-y-1 md:hover:-translate-y-2'}
                         ${selectedPiece?.id === p.id ? 'scale-110 drop-shadow-xl' : ''}
                       `}
                     >
-                      {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute bottom-0 w-8 h-8 md:w-12 md:h-12 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
-                      <ChessPiece3D character={myChar} count={1} />
-                      {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-sm md:text-xl z-20 bg-white/80 rounded-lg md:rounded-xl shadow-inner border border-green-200">완</div>}
+                      {selectedPiece?.id === p.id && p.pos === 0 && <div className="absolute bottom-0 w-6 h-6 md:w-12 md:h-12 bg-yellow-400/50 rounded-full animate-ping blur-sm z-0"></div>}
+                      <ChessPiece3D character={myChar} count={1} size="small" />
+                      {p.pos === 30 && <div className="absolute inset-0 flex items-center justify-center text-green-500 font-black text-xs md:text-xl z-20 bg-white/80 rounded shadow-inner border border-green-200">완</div>}
                     </div>
                   ))}
                 </div>
               </div>
 
               {/* 액션 컨트롤 영역 */}
-              <div className="flex-[1.2] flex flex-col justify-center items-center">
-                {roomData.status === 'playing' ? (
-                  <>
-                    <div className="flex w-full gap-2 md:gap-4 mb-3 md:mb-4">
-                      <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling} 
-                        className="flex-1 bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-base md:text-2xl py-3 md:py-4 rounded-xl md:rounded-2xl shadow-md md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden">
-                        {isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말을 이동하세요') : '상대 턴 대기'}
+              <div className="flex-1 flex flex-col justify-center min-w-0">
+                <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling} 
+                  className="w-full bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-xs md:text-2xl py-2 md:py-4 rounded-lg md:rounded-2xl shadow-sm md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden">
+                  {isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말 이동하기') : '대기중...'}
+                </button>
+                
+                <div className="w-full bg-gray-50 p-1.5 md:p-3 mt-1.5 md:mt-4 rounded-lg md:rounded-xl border border-gray-200 flex gap-1 md:gap-3 items-center overflow-x-auto custom-scrollbar">
+                  {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-[10px] md:text-sm font-bold w-full text-center py-1">적립된 이동 횟수가 없습니다</span>}
+                  {roomData.yutQueue.map((yutKey, idx) => {
+                    const res = YUT_RESULTS[yutKey];
+                    return (
+                      <button key={idx} onClick={() => selectedPiece && executeMove(selectedPiece.id, yutKey, idx)} disabled={!selectedPiece}
+                        className={`flex flex-col items-center justify-center min-w-[40px] h-8 md:min-w-[70px] md:h-14 rounded md:rounded-lg font-black shadow-sm transition-all border-b-2 md:border-b-4 flex-shrink-0 
+                          ${selectedPiece 
+                          ? 'bg-blue-500 hover:bg-blue-400 text-white border-blue-700 active:border-b-0 active:translate-y-1 cursor-pointer animate-pulse' 
+                          : 'bg-gray-200 text-gray-500 border-gray-300'}
+                        `}
+                      >
+                        <span className="text-xs md:text-lg leading-none">{res.name}</span>
+                        <span className="text-[8px] md:text-[10px] mt-0.5 md:mt-0">{res.steps > 0 ? `+${res.steps}` : `${res.steps}`}</span>
                       </button>
-                    </div>
-                    
-                    <div className="w-full bg-gray-50 p-2 md:p-3 rounded-lg md:rounded-xl border border-gray-200 flex gap-2 md:gap-3 min-h-[50px] md:min-h-[60px] items-center overflow-x-auto custom-scrollbar pb-1 md:pb-0">
-                      {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-xs md:text-sm font-bold w-full text-center">적립된 이동 횟수가 없습니다</span>}
-                      {roomData.yutQueue.map((yutKey, idx) => {
-                        const res = YUT_RESULTS[yutKey];
-                        return (
-                          <button key={idx} onClick={() => selectedPiece && executeMove(selectedPiece.id, yutKey, idx)} disabled={!selectedPiece}
-                            className={`flex flex-col items-center justify-center min-w-[50px] h-10 md:min-w-[70px] md:h-14 rounded-md md:rounded-lg font-black shadow-sm transition-all border-b-2 md:border-b-4 flex-shrink-0 
-                              ${selectedPiece 
-                              ? 'bg-blue-500 hover:bg-blue-400 text-white border-blue-700 active:border-b-0 active:translate-y-1 cursor-pointer animate-pulse' 
-                              : 'bg-gray-200 text-gray-500 border-gray-300'}
-                            `}
-                          >
-                            <span className="text-sm md:text-lg leading-none">{res.name}</span>
-                            <span className="text-[8px] md:text-[10px] mt-0.5 md:mt-0">{res.steps > 0 ? `+${res.steps}칸` : `${res.steps}칸`}</span>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-2xl md:text-4xl font-black text-gray-800 drop-shadow-sm py-4 md:py-0">게임 종료!</div>
-                )}
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Right Area: Chat & Logs (모바일에서는 하단 35vh, PC에서는 우측 풀하이트) */}
-          <div className="w-full lg:w-80 h-[35vh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
+          {/* Right Area: Chat & Logs (모바일에서는 높이 25vh 유지) */}
+          <div className="w-full lg:w-80 h-[25vh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
             <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
               <div className="p-2 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center gap-2 flex-shrink-0">게임 기록</div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-3 flex flex-col-reverse custom-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-1.5 md:space-y-3 flex flex-col-reverse custom-scrollbar">
                 {[...roomData.logs].reverse().map((log, idx) => (
-                  <div key={idx} className="text-[10px] md:text-xs text-gray-600 bg-white p-2 md:p-3 rounded-md md:rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
+                  <div key={idx} className="text-[10px] md:text-xs text-gray-600 bg-white p-1.5 md:p-3 rounded-md md:rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
                     {log}
                   </div>
                 ))}
@@ -1168,7 +1231,7 @@
 
       return (
         <div className="flex-1 min-h-0 flex flex-col bg-white">
-          <div className="p-2 md:p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+          <div className="p-1.5 md:p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
             <span className="font-bold text-gray-700 text-xs md:text-sm flex items-center gap-1 md:gap-2"><MessageSquare size={14} className="md:w-4 md:h-4"/> 채팅</span>
             <div className="flex bg-gray-100 p-0.5 md:p-1 rounded-md md:rounded-lg">
               <button onClick={() => setChatMode('all')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
@@ -1176,7 +1239,7 @@
             </div>
           </div>
           
-          <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-3 md:space-y-4 custom-scrollbar">
+          <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-4 custom-scrollbar">
             {visibleMessages.map(m => {
               const isMe = m.uid === myPlayerInfo.uid;
               const isTeamChat = m.mode === 'team';
@@ -1184,7 +1247,7 @@
               return (
                 <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                   <span className="text-[8px] md:text-[10px] font-bold text-gray-400 mb-0.5 md:mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
-                  <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl max-w-[90%] md:max-w-[85%] text-xs md:text-sm shadow-sm ${
+                  <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl max-w-[90%] md:max-w-[85%] text-[10px] md:text-sm shadow-sm ${
                     isTeamChat ? 'bg-blue-600 text-white rounded-tr-sm' : (isMe ? 'bg-gray-800 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm')
                   }`}>{m.text}</div>
                 </div>
