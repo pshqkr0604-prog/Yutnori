@@ -362,6 +362,7 @@
             hostId: user.uid,
             status: 'lobby',
             players: [{ uid: user.uid, name: playerName, team: 'A' }],
+            spectators: [], // 관전자 배열 추가
             turn: 'A',
             throwChances: 1, 
             characters: { A: null, B: null },
@@ -385,14 +386,30 @@
         if (!user) return;
         try {
           const room = rooms.find(r => r.id === roomId);
-          if (!room || room.players.length >= 6) return;
-          if (room.players.find(p => p.uid === user.uid)) { setActiveRoomId(roomId); return; }
+          if (!room) return;
           
-          const assignedTeam = room.players.filter(p => p.team === 'A').length <= room.players.filter(p => p.team === 'B').length ? 'A' : 'B';
-          await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId), {
-            players: arrayUnion({ uid: user.uid, name: playerName, team: assignedTeam }),
-            logs: arrayUnion(`${playerName}님이 입장했습니다.`)
-          });
+          const isAlreadyPlayer = room.players.find(p => p.uid === user.uid);
+          const isAlreadySpectator = room.spectators?.find(p => p.uid === user.uid);
+          
+          if (isAlreadyPlayer || isAlreadySpectator) { 
+             setActiveRoomId(roomId); 
+             return; 
+          }
+          
+          if (room.status === 'lobby') {
+            if (room.players.length >= 6) return alert("방이 가득 찼습니다.");
+            const assignedTeam = room.players.filter(p => p.team === 'A').length <= room.players.filter(p => p.team === 'B').length ? 'A' : 'B';
+            await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId), {
+              players: arrayUnion({ uid: user.uid, name: playerName, team: assignedTeam }),
+              logs: arrayUnion(`${playerName}님이 입장했습니다.`)
+            });
+          } else {
+            // 관전자로 입장
+            await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId), {
+              spectators: arrayUnion({ uid: user.uid, name: playerName, team: 'spectator' }),
+              logs: arrayUnion(`${playerName}님이 관전자로 입장했습니다.`)
+            });
+          }
           setActiveRoomId(roomId);
         } catch (error) {
           alert("방 입장 실패:\n" + error.message);
@@ -402,13 +419,26 @@
       const leaveRoom = async () => {
         if (!user || !activeRoomId || !roomData) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
-        const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
-        if (updatedPlayers.length === 0) await deleteDoc(roomRef);
-        else await updateDoc(roomRef, {
-          players: updatedPlayers,
-          hostId: roomData.hostId === user.uid ? updatedPlayers[0].uid : roomData.hostId,
-          logs: arrayUnion(`${playerName}님이 퇴장했습니다.`)
-        });
+        
+        const isSpectator = roomData.spectators?.some(p => p.uid === user.uid);
+        if (isSpectator) {
+           const updatedSpectators = roomData.spectators.filter(p => p.uid !== user.uid);
+           await updateDoc(roomRef, {
+              spectators: updatedSpectators,
+              logs: arrayUnion(`${playerName}님이 관전을 종료했습니다.`)
+           });
+        } else {
+           const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
+           if (updatedPlayers.length === 0) {
+             await deleteDoc(roomRef);
+           } else {
+             await updateDoc(roomRef, {
+               players: updatedPlayers,
+               hostId: roomData.hostId === user.uid ? updatedPlayers[0].uid : roomData.hostId,
+               logs: arrayUnion(`${playerName}님이 퇴장했습니다.`)
+             });
+           }
+        }
         setActiveRoomId(null);
         setCurrentView('lobby');
       };
@@ -525,13 +555,15 @@
                   )}
                   <div className="flex justify-between items-start mb-3 md:mb-4 pr-6">
                     <h3 className="font-bold text-base md:text-lg text-gray-800 truncate">{room.name}</h3>
-                    <span className={`text-[10px] md:text-xs px-2 py-1 rounded-md font-bold flex-shrink-0 ${room.status !== 'lobby' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                    <span className={`text-[10px] md:text-xs px-2 py-1 rounded-md font-bold flex-shrink-0 ${room.status !== 'lobby' ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'}`}>
                       {room.status !== 'lobby' ? '게임중' : '대기중'}
                     </span>
                   </div>
                   <div className="flex items-center text-gray-500 text-xs md:text-sm mb-4 md:mb-5"><UsersIcon size={14} className="mr-1 md:mr-2 md:w-4 md:h-4" />인원: {room.players.length} / 6</div>
-                  <button onClick={() => onJoin(room.id)} disabled={room.status !== 'lobby' || room.players.length >= 6}
-                    className="w-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 font-bold py-2 md:py-2.5 rounded-md md:rounded-lg transition-colors border border-gray-200 text-sm md:text-base">참가하기</button>
+                  <button onClick={() => onJoin(room.id)} disabled={room.status === 'lobby' && room.players.length >= 6}
+                    className="w-full bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-800 font-bold py-2 md:py-2.5 rounded-md md:rounded-lg transition-colors border border-gray-200 text-sm md:text-base">
+                    {room.status !== 'lobby' ? '관전하기' : '참가하기'}
+                  </button>
                 </div>
               ))
             )}
@@ -552,7 +584,10 @@
       return (
         <div className="max-w-4xl mx-auto p-4 md:p-6 pt-6 md:pt-12 pb-12">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 bg-white p-4 md:p-6 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 gap-4 sm:gap-0">
-            <div><h1 className="text-2xl md:text-3xl font-black text-gray-800">{roomData.name}</h1><p className="text-gray-500 mt-1 text-sm md:text-base">대기실 (최대 3:3)</p></div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-black text-gray-800">{roomData.name}</h1>
+              <p className="text-gray-500 mt-1 text-sm md:text-base">대기실 (최대 3:3) {roomData.spectators?.length > 0 && ` | 관전자 ${roomData.spectators.length}명`}</p>
+            </div>
             <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors text-sm md:text-base w-full sm:w-auto justify-center sm:justify-start border border-gray-200 sm:border-none"><LogOut size={16} className="md:w-[18px] md:h-[18px]"/> 나가기</button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
@@ -604,13 +639,14 @@
     // Character Select View
     // ==========================================
     function CharacterSelectView({ roomData, roomId, user, db, appId }) {
-      const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
+      const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
       const myTeam = myPlayerInfo?.team;
+      const isSpectator = myTeam === 'spectator';
       const isHost = roomData.hostId === user.uid;
       const ready = roomData.ready || { A: false, B: false };
       
       const selectChar = async (team, charName) => {
-        if (myTeam !== team) return;
+        if (myTeam !== team || isSpectator) return;
         if (ready[team]) return;
         const oppTeam = team === 'A' ? 'B' : 'A';
         if (roomData.characters[oppTeam] === charName) return;
@@ -620,7 +656,7 @@
       };
 
       const toggleReady = async (team) => {
-        if (myTeam !== team) return;
+        if (myTeam !== team || isSpectator) return;
         if (!roomData.characters[team]) return alert("말(캐릭터)을 먼저 선택해주세요.");
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
           [`ready.${team}`]: !ready[team]
@@ -642,7 +678,9 @@
         <div className="flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 min-h-full pb-12">
           <div className="mt-8 sm:mt-0 text-center">
             <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
-            <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">자신의 팀 말을 선택하고 준비를 완료해주세요. 양 팀 모두 준비되면 시작됩니다.</p>
+            <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">
+               {isSpectator ? '플레이어들이 말을 선택하고 있습니다. 잠시 기다려주세요.' : '자신의 팀 말을 선택하고 준비를 완료해주세요. 양 팀 모두 준비되면 시작됩니다.'}
+            </p>
           </div>
           
           <div className="flex flex-col md:flex-row gap-6 lg:gap-16 mb-8 w-full max-w-4xl justify-center items-center md:items-start">
@@ -654,7 +692,7 @@
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.A === charName;
-                  const disabled = roomData.characters.B === charName || myTeam !== 'A' || ready.A;
+                  const disabled = roomData.characters.B === charName || myTeam !== 'A' || ready.A || isSpectator;
                   return (
                     <div key={`A-${charName}`} onClick={() => !disabled && selectChar('A', charName)}
                       className={`relative w-24 h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
@@ -684,7 +722,7 @@
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.B === charName;
-                  const disabled = roomData.characters.A === charName || myTeam !== 'B' || ready.B;
+                  const disabled = roomData.characters.A === charName || myTeam !== 'B' || ready.B || isSpectator;
                   return (
                     <div key={`B-${charName}`} onClick={() => !disabled && selectChar('B', charName)}
                       className={`relative w-24 h-32 md:w-32 md:h-40 rounded-xl md:rounded-2xl cursor-pointer transition-all duration-300 flex flex-col items-center justify-center border-2 bg-white
@@ -801,13 +839,14 @@
       const [rollingResult, setRollingResult] = useState(null);
       const lastRollingEventId = useRef(null);
       
-      const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
-      const myTeam = myPlayerInfo?.team || 'A';
+      const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
+      const isSpectator = myPlayerInfo.team === 'spectator';
+      const myTeam = isSpectator ? 'A' : (myPlayerInfo.team || 'A'); // 관전자는 기본적으로 A팀 시점으로 화면을 보게 함
       const oppTeam = myTeam === 'A' ? 'B' : 'A';
       const isHost = roomData.hostId === user.uid;
 
       const isBotTurn = roomData.players.filter(p => p.team === roomData.turn).every(p => p.isBot);
-      const isMyTurn = (roomData.turn === myTeam) || (isHost && isBotTurn);
+      const isMyTurn = !isSpectator && ((roomData.turn === myPlayerInfo.team) || (isHost && isBotTurn));
       const playingTeam = isMyTurn ? roomData.turn : myTeam;
 
       useEffect(() => {
@@ -982,7 +1021,7 @@
       };
 
       const handlePieceClick = (team, id) => {
-        if (!isMyTurn || isRolling) return;
+        if (!isMyTurn || isRolling || isSpectator) return;
         if (team !== playingTeam) return;
         if (roomData.yutQueue.length === 0) return alert("사용할 수 있는 이동 횟수가 없습니다. 윷을 던지세요.");
         setSelectedPiece(selectedPiece?.id === id ? null : { team, id });
@@ -1008,7 +1047,7 @@
           const charConfig = CHARACTERS[roomData.characters[pieces[0].team]];
 
           elements.push(
-            <div key={`pos-${pos}`} onClick={() => isMyTurn && pieces[0].team === playingTeam && handlePieceClick(pieces[0].team, pieces[0].id)}
+            <div key={`pos-${pos}`} onClick={() => !isSpectator && isMyTurn && pieces[0].team === playingTeam && handlePieceClick(pieces[0].team, pieces[0].id)}
               className={`absolute flex items-center justify-center cursor-pointer transition-transform z-10 transform -translate-x-1/2 -translate-y-[70%]
                 ${isSelected ? 'scale-110 md:scale-125 z-20' : 'hover:scale-110'}
               `}
@@ -1071,6 +1110,7 @@
                        <span className="text-gray-400 font-black text-[10px] md:text-sm">VS</span>
                        <span className={`px-1.5 py-0.5 md:px-3 md:py-1 rounded text-white ${roomData.turn === 'B' ? 'bg-red-600 shadow-sm' : 'bg-gray-400'}`}>팀 B</span>
                        {isMyTurn && <span className="ml-1 md:ml-2 animate-pulse text-amber-600 text-[9px] md:text-xs font-black border border-amber-400 px-1.5 md:px-2 py-0.5 rounded-full whitespace-nowrap">내 차례!</span>}
+                       {isSpectator && <span className="ml-1 md:ml-2 text-purple-600 text-[9px] md:text-xs font-black border border-purple-400 px-1.5 md:px-2 py-0.5 rounded-full whitespace-nowrap">관전 모드</span>}
                     </div>
                   )}
                 </div>
@@ -1142,14 +1182,14 @@
               {/* 내 대기 말 영역 */}
               <div className="flex flex-col justify-center border-r border-gray-200 pr-2 md:pr-8 w-1/3 sm:w-auto">
                 <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2 text-[10px] md:text-base">
-                  내 대기 말
+                  {isSpectator ? `[${myTeam}팀] 대기 말` : '내 대기 말'}
                   {isBotTurn && isMyTurn && <span className="text-purple-600 text-[8px] md:text-xs font-bold bg-purple-100 px-1 md:px-2 py-0.5 rounded">조작중</span>}
                 </h3>
                 <div className="flex flex-wrap gap-1 md:gap-4 justify-start">
                   {roomData.pieces[playingTeam].map(p => (
-                    <div key={p.id} onClick={() => p.pos === 0 && handlePieceClick(playingTeam, p.id)}
-                      className={`relative cursor-pointer transition-transform w-6 h-10 md:w-12 md:h-16 flex items-end justify-center
-                        ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : 'hover:-translate-y-1 md:hover:-translate-y-2'}
+                    <div key={p.id} onClick={() => !isSpectator && p.pos === 0 && handlePieceClick(playingTeam, p.id)}
+                      className={`relative ${!isSpectator ? 'cursor-pointer' : ''} transition-transform w-6 h-10 md:w-12 md:h-16 flex items-end justify-center
+                        ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : (!isSpectator ? 'hover:-translate-y-1 md:hover:-translate-y-2' : '')}
                         ${selectedPiece?.id === p.id ? 'scale-110 drop-shadow-xl' : ''}
                       `}
                     >
@@ -1163,9 +1203,10 @@
 
               {/* 액션 컨트롤 영역 */}
               <div className="flex-1 flex flex-col justify-center min-w-0">
-                <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling} 
-                  className="w-full bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-xs md:text-2xl py-2 md:py-4 rounded-lg md:rounded-2xl shadow-sm md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden">
-                  {isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말 이동하기') : '대기중...'}
+                <button onClick={throwYut} disabled={!isMyTurn || roomData.throwChances <= 0 || isRolling || isSpectator} 
+                  className={`w-full bg-gray-800 hover:bg-black disabled:bg-gray-300 disabled:text-gray-500 text-white font-black text-xs md:text-2xl py-2 md:py-4 rounded-lg md:rounded-2xl shadow-sm md:shadow-lg active:translate-y-1 transition-all relative overflow-hidden
+                    ${isSpectator ? 'opacity-70 cursor-not-allowed' : ''}`}>
+                  {isSpectator ? '관전 중입니다' : (isMyTurn ? (roomData.throwChances > 0 ? `윷 던지기 (${roomData.throwChances}회)` : '말 이동하기') : '상대 턴 대기')}
                 </button>
                 
                 <div className="w-full bg-gray-50 p-1.5 md:p-3 mt-1.5 md:mt-4 rounded-lg md:rounded-xl border border-gray-200 flex gap-1 md:gap-3 items-center overflow-x-auto custom-scrollbar">
@@ -1173,9 +1214,9 @@
                   {roomData.yutQueue.map((yutKey, idx) => {
                     const res = YUT_RESULTS[yutKey];
                     return (
-                      <button key={idx} onClick={() => selectedPiece && executeMove(selectedPiece.id, yutKey, idx)} disabled={!selectedPiece}
+                      <button key={idx} onClick={() => !isSpectator && selectedPiece && executeMove(selectedPiece.id, yutKey, idx)} disabled={!selectedPiece || isSpectator}
                         className={`flex flex-col items-center justify-center min-w-[40px] h-8 md:min-w-[70px] md:h-14 rounded md:rounded-lg font-black shadow-sm transition-all border-b-2 md:border-b-4 flex-shrink-0 
-                          ${selectedPiece 
+                          ${selectedPiece && !isSpectator
                           ? 'bg-blue-500 hover:bg-blue-400 text-white border-blue-700 active:border-b-0 active:translate-y-1 cursor-pointer animate-pulse' 
                           : 'bg-gray-200 text-gray-500 border-gray-300'}
                         `}
@@ -1215,6 +1256,7 @@
       const [input, setInput] = useState('');
       const [chatMode, setChatMode] = useState('all');
       const chatEndRef = useRef(null);
+      const isSpectator = myPlayerInfo.team === 'spectator';
 
       useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
 
@@ -1235,7 +1277,9 @@
             <span className="font-bold text-gray-700 text-xs md:text-sm flex items-center gap-1 md:gap-2"><MessageSquare size={14} className="md:w-4 md:h-4"/> 채팅</span>
             <div className="flex bg-gray-100 p-0.5 md:p-1 rounded-md md:rounded-lg">
               <button onClick={() => setChatMode('all')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
-              <button onClick={() => setChatMode('team')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
+              {!isSpectator && (
+                <button onClick={() => setChatMode('team')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
+              )}
             </div>
           </div>
           
@@ -1243,7 +1287,7 @@
             {visibleMessages.map(m => {
               const isMe = m.uid === myPlayerInfo.uid;
               const isTeamChat = m.mode === 'team';
-              const charName = characters?.[m.team] ? CHARACTERS[characters[m.team]].name : m.team;
+              const charName = characters?.[m.team] ? CHARACTERS[characters[m.team]].name : (m.team === 'spectator' ? '관전' : m.team);
               return (
                 <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                   <span className="text-[8px] md:text-[10px] font-bold text-gray-400 mb-0.5 md:mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
