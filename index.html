@@ -286,7 +286,7 @@
       const [roomData, setRoomData] = useState(null);
       const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
       // 사용자 전적 상태
-      const [userStats, setUserStats] = useState({ wins: 0, losses: 0 });
+      const [userStats, setUserStats] = useState({ wins: 0, losses: 0, versus: {} });
       
       // 사용자 인증 상태 추적
       useEffect(() => {
@@ -298,7 +298,7 @@
              setCurrentView('auth');
              setActiveRoomId(null);
              setRoomData(null);
-             setUserStats({ wins: 0, losses: 0 });
+             setUserStats({ wins: 0, losses: 0, versus: {} });
           }
         });
         return () => unsubscribe();
@@ -312,7 +312,7 @@
           if (docSnap.exists()) {
             setUserStats(docSnap.data());
           } else {
-            setDoc(userRef, { wins: 0, losses: 0 });
+            setDoc(userRef, { wins: 0, losses: 0, versus: {} });
           }
         });
         return () => unsubscribe();
@@ -489,7 +489,7 @@
         <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
           {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
           {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} /></div>}
-          {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} /></div>}
+          {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} /></div>}
           {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
           {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
           {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} />}
@@ -592,7 +592,7 @@
     // ==========================================
     // Waiting Room View
     // ==========================================
-    function WaitingRoomView({ roomData, user, onSwitchTeam, onStart, onLeave, onAddBot }) {
+    function WaitingRoomView({ roomData, user, onSwitchTeam, onStart, onLeave, onAddBot, userStats }) {
       if (!roomData) return null;
       const teamA = roomData.players.filter(p => p.team === 'A');
       const teamB = roomData.players.filter(p => p.team === 'B');
@@ -614,12 +614,30 @@
                 <span className="bg-blue-100 text-blue-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamA.length}/3</span>
               </div>
               <div className="space-y-2 md:space-y-3">
-                {teamA.map(p => (
-                  <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-blue-100 flex items-center gap-2 md:gap-3 shadow-sm">
-                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm md:text-base">{p.name.charAt(0)}</div>
-                    <span className="font-medium text-gray-800 text-sm md:text-base truncate">{p.name} {p.uid === user.uid && <span className="text-blue-500 text-xs md:text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl">🤖</span>}</span>
-                  </div>
-                ))}
+                {teamA.map(p => {
+                  const isMe = p.uid === user.uid;
+                  const vsStat = !isMe && !p.isBot ? userStats?.versus?.[p.uid] : null;
+                  return (
+                    <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-blue-100 flex items-center gap-2 md:gap-3 shadow-sm overflow-hidden">
+                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm md:text-base flex-shrink-0">{p.name.charAt(0)}</div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium text-gray-800 text-sm md:text-base truncate flex items-center">
+                          {p.name} {isMe && <span className="text-blue-500 text-xs md:text-sm ml-1 flex-shrink-0">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg flex-shrink-0">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl flex-shrink-0">🤖</span>}
+                        </span>
+                        {!isMe && !p.isBot && (
+                          <span className="text-[10px] md:text-xs text-gray-500 font-bold truncate">
+                            {vsStat ? `⚔️ 상대전적: ${vsStat.wins || 0}승 ${vsStat.losses || 0}패` : '⚔️ 첫 대결'}
+                          </span>
+                        )}
+                        {isMe && (
+                          <span className="text-[10px] md:text-xs text-blue-500 font-bold truncate">
+                            내 캐릭터
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
                 {teamA.length === 0 && <div className="text-blue-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-blue-200 rounded-lg md:rounded-xl">대기 중...</div>}
               </div>
             </div>
@@ -629,12 +647,30 @@
                 <span className="bg-red-100 text-red-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamB.length}/3</span>
               </div>
               <div className="space-y-2 md:space-y-3">
-                {teamB.map(p => (
-                  <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-red-100 flex items-center gap-2 md:gap-3 shadow-sm">
-                    <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm md:text-base">{p.name.charAt(0)}</div>
-                    <span className="font-medium text-gray-800 text-sm md:text-base truncate">{p.name} {p.uid === user.uid && <span className="text-red-500 text-xs md:text-sm ml-1">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl">🤖</span>}</span>
-                  </div>
-                ))}
+                {teamB.map(p => {
+                  const isMe = p.uid === user.uid;
+                  const vsStat = !isMe && !p.isBot ? userStats?.versus?.[p.uid] : null;
+                  return (
+                    <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-red-100 flex items-center gap-2 md:gap-3 shadow-sm overflow-hidden">
+                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm md:text-base flex-shrink-0">{p.name.charAt(0)}</div>
+                      <div className="flex flex-col min-w-0">
+                        <span className="font-medium text-gray-800 text-sm md:text-base truncate flex items-center">
+                          {p.name} {isMe && <span className="text-red-500 text-xs md:text-sm ml-1 flex-shrink-0">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg flex-shrink-0">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl flex-shrink-0">🤖</span>}
+                        </span>
+                        {!isMe && !p.isBot && (
+                          <span className="text-[10px] md:text-xs text-gray-500 font-bold truncate">
+                            {vsStat ? `⚔️ 상대전적: ${vsStat.wins || 0}승 ${vsStat.losses || 0}패` : '⚔️ 첫 대결'}
+                          </span>
+                        )}
+                        {isMe && (
+                          <span className="text-[10px] md:text-xs text-red-500 font-bold truncate">
+                            내 캐릭터
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
                 {teamB.length === 0 && <div className="text-red-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-red-200 rounded-lg md:rounded-xl">대기 중...</div>}
               </div>
             </div>
@@ -847,7 +883,7 @@
     }
 
     // ==========================================
-    // Game View (모바일 최적화 & 회색 보드 테마 롤백 적용)
+    // Game View
     // ==========================================
     function GameView({ roomData, roomId, user, onLeave, db, appId }) {
       const [selectedPiece, setSelectedPiece] = useState(null);
@@ -1013,17 +1049,35 @@
           updateData.logs = arrayUnion(`🎉 ${playingTeam === 'A' ? '팀 A' : '팀 B'}가 승리했습니다! 게임 종료.`);
 
           // [전적 업데이트 로직] 
+          const winners = roomData.players.filter(p => p.team === playingTeam && !p.isBot);
+          const losers = roomData.players.filter(p => p.team !== playingTeam && p.team !== 'spectator' && !p.isBot);
+
           roomData.players.forEach(async (p) => {
-             if (p.isBot) return;
+             if (p.isBot || p.team === 'spectator') return;
              const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_users', p.uid);
              const isWinner = p.team === playingTeam;
+             const opps = isWinner ? losers : winners;
              
              try {
                const userSnap = await getDoc(userRef);
+               let updates = {};
+               if (isWinner) updates.wins = increment(1);
+               else updates.losses = increment(1);
+               
+               opps.forEach(opp => {
+                   if (isWinner) updates[`versus.${opp.uid}.wins`] = increment(1);
+                   else updates[`versus.${opp.uid}.losses`] = increment(1);
+                   updates[`versus.${opp.uid}.name`] = opp.name;
+               });
+
                if (!userSnap.exists()) {
-                  await setDoc(userRef, { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0 });
+                  let initialData = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, versus: {} };
+                  opps.forEach(opp => {
+                      initialData.versus[opp.uid] = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, name: opp.name };
+                  });
+                  await setDoc(userRef, initialData);
                } else {
-                  await updateDoc(userRef, isWinner ? { wins: increment(1) } : { losses: increment(1) });
+                  await updateDoc(userRef, updates);
                }
              } catch(err) {
                console.error("전적 업데이트 에러:", err);
@@ -1227,7 +1281,7 @@
                 </button>
                 
                 <div className="w-full bg-gray-50 p-1.5 md:p-3 mt-1.5 md:mt-4 rounded-lg md:rounded-xl border border-gray-200 flex gap-1.5 md:gap-3 items-center overflow-x-auto custom-scrollbar min-h-[44px] sm:min-h-[50px] md:min-h-[60px]">
-                  {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-[10px] md:text-sm font-bold w-full text-center">적립된 이동 횟수가 없습니다</span>}
+                  {roomData.yutQueue.length === 0 && <span className="text-gray-400 text-[10px] md:text-sm font-bold w-full text-center py-1">적립된 이동 횟수가 없습니다</span>}
                   {roomData.yutQueue.map((yutKey, idx) => {
                     const res = YUT_RESULTS[yutKey];
                     return (
