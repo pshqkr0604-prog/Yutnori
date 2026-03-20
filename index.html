@@ -62,10 +62,8 @@
     const MessageSquare = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>;
 
     // ==========================================
-    // Firebase Initialization (강제 고정 설정)
+    // Firebase Initialization (캔버스 변수 원천 차단, 무조건 사용자 DB만 사용)
     // ==========================================
-    // 더 이상 캔버스 임시 변수(__firebase_config)를 참조하지 않고,
-    // 오직 질문자님의 데이터베이스로만 다이렉트로 연결되도록 코드를 고정했습니다.
     const firebaseConfig = {
       apiKey: "AIzaSyDPbR6XUdb2CR5G0WhLTWINPIpRGTq4VWc",
       authDomain: "yutnori-8d609.firebaseapp.com",
@@ -80,8 +78,8 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // 캔버스, 깃허브, 스마트폰 등 어디서 접속하든 무조건 이 폴더를 보게 강제 고정
-    const GLOBAL_APP_ID = 'yutnori_global_server_v100'; 
+    // 데이터베이스 방 목록 저장 폴더명 (동기화 확인을 위해 완전히 새 폴더로 변경)
+    const GLOBAL_APP_ID = 'yutnori_live_match_final_v2'; 
 
     // --- Yut Board Logic ---
     const BOARD_GRAPH = {
@@ -217,14 +215,14 @@
       const [roomData, setRoomData] = useState(null);
       const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
       
-      // 사용자 인증
+      // 사용자 인증 (오류 메시지 명확화)
       useEffect(() => {
         const initAuth = async () => {
           try {
             await signInAnonymously(auth);
           } catch (err) { 
             console.error("Auth Error:", err); 
-            setAuthError(err.message); 
+            setAuthError("파이어베이스 인증 에러 (익명 로그인을 켜주세요!): " + err.message); 
           }
         };
         initAuth();
@@ -232,21 +230,20 @@
         return () => unsubscribe();
       }, []);
 
-      // 방 목록 불러오기
+      // 방 목록 불러오기 (오류 메시지 명확화)
       useEffect(() => {
         if (!user || !db) return;
-        // GLOBAL_APP_ID를 사용하여 모두가 같은 경로를 바라보게 강제
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
         const unsubscribe = onSnapshot(roomsRef, (snapshot) => {
           setRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished'));
         }, (error) => {
           console.error(error);
-          setAuthError("방 목록을 불러올 권한이 없습니다. 파이어베이스 규칙을 확인해주세요.");
+          setAuthError("방 목록을 불러올 수 없습니다. Firestore Database의 규칙(Rules)이 제대로 설정되었는지 확인하세요.");
         });
         return () => unsubscribe();
       }, [user]);
 
-      // 특정 방 데이터 구독하기
+      // 특정 방 구독
       useEffect(() => {
         if (!user || !db || !activeRoomId) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -266,40 +263,50 @@
         return () => unsubscribe();
       }, [user, activeRoomId, currentView]);
 
+      // 방 만들기 (권한 부족 시 강제 경고창 띄우기)
       const createRoom = async () => {
         if (!user) return;
-        const newRoomRef = doc(collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms'));
-        await setDoc(newRoomRef, {
-          name: `${playerName}의 방`,
-          hostId: user.uid,
-          status: 'lobby',
-          players: [{ uid: user.uid, name: playerName, team: 'A' }],
-          turn: 'A',
-          throwChances: 1, 
-          characters: { A: null, B: null },
-          turnData: null,
-          yutQueue: [],
-          pieces: {
-            A: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ],
-            B: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ]
-          },
-          logs: ['게임 방이 생성되었습니다.']
-        });
-        setActiveRoomId(newRoomRef.id);
+        try {
+          const newRoomRef = doc(collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms'));
+          await setDoc(newRoomRef, {
+            name: `${playerName}의 방`,
+            hostId: user.uid,
+            status: 'lobby',
+            players: [{ uid: user.uid, name: playerName, team: 'A' }],
+            turn: 'A',
+            throwChances: 1, 
+            characters: { A: null, B: null },
+            turnData: null,
+            yutQueue: [],
+            pieces: {
+              A: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ],
+              B: [ {id: 0, pos: 0}, {id: 1, pos: 0}, {id: 2, pos: 0}, {id: 3, pos: 0} ]
+            },
+            logs: ['게임 방이 생성되었습니다.']
+          });
+          setActiveRoomId(newRoomRef.id);
+        } catch (error) {
+          console.error("방 생성 에러:", error);
+          alert("방을 만들 수 없습니다!\n파이어베이스 설정 문제: " + error.message + "\n\n1. Firestore Database를 만들었는지 확인하세요.\n2. 규칙(Rules)을 제대로 변경하고 게시했는지 확인하세요.");
+        }
       };
 
       const joinRoom = async (roomId) => {
         if (!user) return;
-        const room = rooms.find(r => r.id === roomId);
-        if (!room || room.players.length >= 6) return;
-        if (room.players.find(p => p.uid === user.uid)) { setActiveRoomId(roomId); return; }
-        
-        const assignedTeam = room.players.filter(p => p.team === 'A').length <= room.players.filter(p => p.team === 'B').length ? 'A' : 'B';
-        await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId), {
-          players: arrayUnion({ uid: user.uid, name: playerName, team: assignedTeam }),
-          logs: arrayUnion(`${playerName}님이 입장했습니다.`)
-        });
-        setActiveRoomId(roomId);
+        try {
+          const room = rooms.find(r => r.id === roomId);
+          if (!room || room.players.length >= 6) return;
+          if (room.players.find(p => p.uid === user.uid)) { setActiveRoomId(roomId); return; }
+          
+          const assignedTeam = room.players.filter(p => p.team === 'A').length <= room.players.filter(p => p.team === 'B').length ? 'A' : 'B';
+          await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId), {
+            players: arrayUnion({ uid: user.uid, name: playerName, team: assignedTeam }),
+            logs: arrayUnion(`${playerName}님이 입장했습니다.`)
+          });
+          setActiveRoomId(roomId);
+        } catch (error) {
+          alert("방 입장 실패:\n" + error.message);
+        }
       };
 
       const leaveRoom = async () => {
