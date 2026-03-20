@@ -131,7 +131,7 @@
         if (password.length < 6) return alert("비밀번호는 6자리 이상이어야 합니다.");
         
         setLoading(true);
-        const email = `${id}@yutnori.game`; 
+        const email = `${id}@yutnori.game`; // 아이디를 이메일 형식으로 변환하여 사용
         
         try {
           if (isLogin) {
@@ -591,9 +591,9 @@
       );
       if (!user && currentView !== 'auth') return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버 연결 중...</div>;
 
-      // 레이아웃 전체 스크롤 관리 
+      // 레이아웃 전체 스크롤 관리 (모바일 스크롤 고정 오버레이)
       return (
-        <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row relative">
+        <div className="h-[100dvh] w-full bg-[#f3f4f6] font-sans text-gray-800 overflow-hidden flex flex-col lg:flex-row relative">
           
           {/* 전역 이모티콘 팝업 오버레이 */}
           {activeEmoticon && (
@@ -611,11 +611,11 @@
           )}
 
           {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
-          {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} db={db} appId={GLOBAL_APP_ID} /></div>}
-          {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} /></div>}
-          {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
-          {currentView === 'turn_select' && <div className="h-full w-full overflow-y-auto"><TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
-          {currentView === 'game' && <div className="h-full w-full overflow-y-auto lg:overflow-hidden"><GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} /></div>}
+          {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'room' && <WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} db={db} appId={GLOBAL_APP_ID} roomId={activeRoomId} />}
+          {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} />}
         </div>
       );
     }
@@ -627,7 +627,8 @@
       const [onlineUsers, setOnlineUsers] = useState([]);
       const [lobbyMessages, setLobbyMessages] = useState([]);
       const [chatInput, setChatInput] = useState('');
-      const chatEndRef = useRef(null);
+      const [isMobileChatOpen, setIsMobileChatOpen] = useState(false); // 모바일 채팅창 상태
+      const lobbyChatRef = useRef(null);
 
       const handleLogout = async () => {
          if(confirm("로그아웃 하시겠습니까?")) {
@@ -664,7 +665,12 @@
         };
       }, [db, appId]);
 
-      useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [lobbyMessages]);
+      // 강제 스크롤 대신 scrollTop을 사용하여 뷰포트 흔들림 방지
+      useEffect(() => {
+        if (lobbyChatRef.current) {
+          lobbyChatRef.current.scrollTop = lobbyChatRef.current.scrollHeight;
+        }
+      }, [lobbyMessages, isMobileChatOpen]);
 
       const sendLobbyChat = async (e) => {
         e.preventDefault();
@@ -682,9 +688,9 @@
       const winRate = totalGames === 0 ? 0 : Math.round(((userStats.wins || 0) / totalGames) * 100);
 
       return (
-        <div className="flex flex-col lg:flex-row h-full w-full">
+        <div className="flex flex-col lg:flex-row h-[100dvh] w-full">
           {/* Main Lobby Area */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar relative p-4 md:p-6 pt-10 md:pt-20 pb-12">
+          <div className="flex-1 overflow-y-auto custom-scrollbar relative p-4 md:p-6 pt-10 md:pt-20 pb-24 lg:pb-12">
             <button onClick={handleLogout} className="absolute top-4 right-4 md:top-6 md:right-6 flex items-center gap-1 md:gap-2 text-gray-500 hover:text-red-600 font-bold px-2 py-1.5 md:px-3 md:py-2 rounded-lg bg-white border border-gray-200 shadow-sm transition-colors text-xs md:text-sm">
               <LogOut size={14} className="md:w-4 md:h-4"/> 로그아웃
             </button>
@@ -760,20 +766,30 @@
             </div>
           </div>
 
-          {/* Right Sidebar: 접속자 목록 & 로비 단체 채팅 (모바일 60dvh) */}
-          <div className="w-full lg:w-80 h-[60dvh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
+          {/* Mobile Overlay Background */}
+          {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
+
+          {/* Right Sidebar (Desktop Fixed Right, Mobile Slide-up Overlay) */}
+          <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+            
+            {/* Mobile Header for Overlay */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
+               <span className="font-black text-gray-800 text-lg">광장 통신망</span>
+               <button onClick={() => setIsMobileChatOpen(false)} className="text-gray-500 hover:text-red-500 font-bold px-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm shadow-sm">닫기 ✕</button>
+            </div>
+
             {/* 1. 접속 중인 사람들 목록 */}
             <div className="flex-1 lg:h-1/3 min-h-[120px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
-              <div className="p-2 md:p-3 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center justify-between flex-shrink-0">
-                <span className="flex items-center gap-1.5"><UsersIcon size={14}/> 접속 중</span>
-                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[10px]">{onlineUsers.length}명</span>
+              <div className="p-3 md:p-3 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center justify-between flex-shrink-0">
+                <span className="flex items-center gap-1.5"><UsersIcon size={16}/> 접속 중</span>
+                <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs">{onlineUsers.length}명</span>
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-2 custom-scrollbar">
                 {onlineUsers.map(u => (
-                  <div key={u.id} className="flex items-center gap-2 text-[11px] md:text-xs font-medium text-gray-700 p-1.5 bg-white rounded-md border border-gray-100 shadow-sm">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 flex-shrink-0"></div>
+                  <div key={u.id} className="flex items-center gap-2 text-xs md:text-sm font-medium text-gray-700 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
+                    <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
                     <span className="truncate flex-1">{u.name}</span>
-                    {user && u.id === user.uid && <span className="text-blue-500 text-[9px] flex-shrink-0">(나)</span>}
+                    {user && u.id === user.uid && <span className="text-blue-500 text-[10px] flex-shrink-0">(나)</span>}
                   </div>
                 ))}
               </div>
@@ -781,29 +797,33 @@
             
             {/* 2. 로비 광장 채팅 */}
             <div className="flex-[2] lg:h-2/3 min-h-[200px] flex flex-col bg-white">
-              <div className="p-2 md:p-3 border-b border-gray-200 flex items-center gap-1.5 flex-shrink-0 font-bold text-gray-700 text-xs md:text-sm">
-                <MessageSquare size={14} /> 광장 채팅
+              <div className="p-3 md:p-3 border-b border-gray-200 flex items-center gap-1.5 flex-shrink-0 font-bold text-gray-700 text-sm">
+                <MessageSquare size={16} /> 광장 채팅
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-3 space-y-2 custom-scrollbar flex flex-col">
+              <div ref={lobbyChatRef} className="flex-1 min-h-0 overflow-y-auto p-3 md:p-3 space-y-3 custom-scrollbar flex flex-col">
                 {lobbyMessages.map(m => {
                   const isMe = user && m.uid === user.uid;
                   return (
                     <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                      <span className="text-[9px] font-bold text-gray-400 mb-0.5 px-1">{m.name}</span>
-                      <div className={`px-3 py-1.5 rounded-xl max-w-[90%] text-xs shadow-sm ${isMe ? 'bg-amber-500 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'}`}>
+                      <span className="text-[10px] font-bold text-gray-400 mb-0.5 px-1">{m.name}</span>
+                      <div className={`px-3 py-2 rounded-xl max-w-[90%] text-xs shadow-sm ${isMe ? 'bg-amber-500 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm'}`}>
                         {m.text}
                       </div>
                     </div>
                   );
                 })}
-                <div ref={chatEndRef} />
               </div>
-              <form onSubmit={sendLobbyChat} className="p-2 md:p-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
+              <form onSubmit={sendLobbyChat} className="p-3 md:p-3 border-t border-gray-200 bg-gray-50 flex-shrink-0">
                 <input type="text" value={chatInput} onChange={(e) => setChatInput(e.target.value)} placeholder="광장에 메시지 보내기..."
-                  className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs transition-all shadow-sm" />
+                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-sm transition-all shadow-sm" />
               </form>
             </div>
           </div>
+
+          {/* Floating Action Button for Mobile Chat */}
+          <button onClick={() => setIsMobileChatOpen(true)} className="lg:hidden fixed bottom-6 right-6 z-[60] bg-amber-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform">
+            <MessageSquare size={28} />
+          </button>
         </div>
       );
     }
@@ -811,98 +831,142 @@
     // ==========================================
     // Waiting Room View
     // ==========================================
-    function WaitingRoomView({ roomData, user, onSwitchTeam, onStart, onLeave, onAddBot, userStats }) {
+    function WaitingRoomView({ roomData, user, onSwitchTeam, onStart, onLeave, onAddBot, userStats, db, appId, roomId }) {
+      const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+      const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
+      const [messages, setMessages] = useState([]);
+
+      useEffect(() => {
+        if (!db || !roomId) return;
+        const chatRef = collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`);
+        const q = query(chatRef, orderBy('createdAt', 'desc'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse());
+        });
+        return () => unsubscribe();
+      }, [db, roomId, appId]);
+
       if (!roomData) return null;
       const teamA = roomData.players.filter(p => p.team === 'A');
       const teamB = roomData.players.filter(p => p.team === 'B');
       const isHost = roomData.hostId === user.uid;
 
       return (
-        <div className="max-w-4xl mx-auto p-4 md:p-6 pt-6 md:pt-12 pb-12">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 bg-white p-4 md:p-6 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 gap-4 sm:gap-0">
-            <div>
-              <h1 className="text-2xl md:text-3xl font-black text-gray-800">{roomData.name}</h1>
-              <p className="text-gray-500 mt-1 text-sm md:text-base">대기실 (최대 3:3) {roomData.spectators?.length > 0 && ` | 관전자 ${roomData.spectators.length}명`}</p>
-            </div>
-            <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors text-sm md:text-base w-full sm:w-auto justify-center sm:justify-start border border-gray-200 sm:border-none"><LogOut size={16} className="md:w-[18px] md:h-[18px]"/> 나가기</button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
-            <div className="bg-blue-50/50 p-4 md:p-6 rounded-xl md:rounded-2xl border-t-4 border-blue-400 shadow-sm">
-              <div className="flex justify-between items-center mb-4 md:mb-6 border-b border-blue-100 pb-2 md:pb-3">
-                <h2 className="text-lg md:text-xl font-bold text-blue-800">팀 A</h2>
-                <span className="bg-blue-100 text-blue-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamA.length}/3</span>
+        <div className="flex flex-col lg:flex-row h-[100dvh] w-full bg-[#f3f4f6]">
+          {/* Main Area */}
+          <div className="flex-1 overflow-y-auto max-w-4xl mx-auto w-full p-4 md:p-6 pt-6 md:pt-12 pb-24 lg:pb-12">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 md:mb-8 bg-white p-4 md:p-6 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 gap-4 sm:gap-0">
+              <div>
+                <h1 className="text-2xl md:text-3xl font-black text-gray-800">{roomData.name}</h1>
+                <p className="text-gray-500 mt-1 text-sm md:text-base">대기실 (최대 3:3) {roomData.spectators?.length > 0 && ` | 관전자 ${roomData.spectators.length}명`}</p>
               </div>
-              <div className="space-y-2 md:space-y-3">
-                {teamA.map(p => {
-                  const isMe = p.uid === user.uid;
-                  const vsStat = !isMe && !p.isBot ? userStats?.versus?.[p.uid] : null;
-                  return (
-                    <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-blue-100 flex items-center gap-2 md:gap-3 shadow-sm overflow-hidden">
-                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm md:text-base flex-shrink-0">{p.name.charAt(0)}</div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-medium text-gray-800 text-sm md:text-base truncate flex items-center">
-                          {p.name} {isMe && <span className="text-blue-500 text-xs md:text-sm ml-1 flex-shrink-0">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg flex-shrink-0">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl flex-shrink-0">🤖</span>}
-                        </span>
-                        {!isMe && !p.isBot && (
-                          <span className="text-[10px] md:text-xs text-gray-500 font-bold truncate">
-                            {vsStat ? `⚔️ 상대전적: ${vsStat.wins || 0}승 ${vsStat.losses || 0}패` : '⚔️ 첫 대결'}
+              <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 px-3 py-1.5 md:px-4 md:py-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg font-medium transition-colors text-sm md:text-base w-full sm:w-auto justify-center sm:justify-start border border-gray-200 sm:border-none"><LogOut size={16} className="md:w-[18px] md:h-[18px]"/> 나가기</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6 mb-6 md:mb-8">
+              <div className="bg-blue-50/50 p-4 md:p-6 rounded-xl md:rounded-2xl border-t-4 border-blue-400 shadow-sm">
+                <div className="flex justify-between items-center mb-4 md:mb-6 border-b border-blue-100 pb-2 md:pb-3">
+                  <h2 className="text-lg md:text-xl font-bold text-blue-800">팀 A</h2>
+                  <span className="bg-blue-100 text-blue-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamA.length}/3</span>
+                </div>
+                <div className="space-y-2 md:space-y-3">
+                  {teamA.map(p => {
+                    const isMe = p.uid === user.uid;
+                    const vsStat = !isMe && !p.isBot ? userStats?.versus?.[p.uid] : null;
+                    return (
+                      <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-blue-100 flex items-center gap-2 md:gap-3 shadow-sm overflow-hidden">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold text-sm md:text-base flex-shrink-0">{p.name.charAt(0)}</div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-medium text-gray-800 text-sm md:text-base truncate flex items-center">
+                            {p.name} {isMe && <span className="text-blue-500 text-xs md:text-sm ml-1 flex-shrink-0">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg flex-shrink-0">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl flex-shrink-0">🤖</span>}
                           </span>
-                        )}
-                        {isMe && (
-                          <span className="text-[10px] md:text-xs text-blue-500 font-bold truncate">
-                            내 캐릭터
-                          </span>
-                        )}
+                          {!isMe && !p.isBot && (
+                            <span className="text-[10px] md:text-xs text-gray-500 font-bold truncate">
+                              {vsStat ? `⚔️ 상대전적: ${vsStat.wins || 0}승 ${vsStat.losses || 0}패` : '⚔️ 첫 대결'}
+                            </span>
+                          )}
+                          {isMe && (
+                            <span className="text-[10px] md:text-xs text-blue-500 font-bold truncate">
+                              내 캐릭터
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-                {teamA.length === 0 && <div className="text-blue-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-blue-200 rounded-lg md:rounded-xl">대기 중...</div>}
+                    )
+                  })}
+                  {teamA.length === 0 && <div className="text-blue-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-blue-200 rounded-lg md:rounded-xl">대기 중...</div>}
+                </div>
               </div>
-            </div>
-            <div className="bg-red-50/50 p-4 md:p-6 rounded-xl md:rounded-2xl border-t-4 border-red-400 shadow-sm">
-              <div className="flex justify-between items-center mb-4 md:mb-6 border-b border-red-100 pb-2 md:pb-3">
-                <h2 className="text-lg md:text-xl font-bold text-red-800">팀 B</h2>
-                <span className="bg-red-100 text-red-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamB.length}/3</span>
-              </div>
-              <div className="space-y-2 md:space-y-3">
-                {teamB.map(p => {
-                  const isMe = p.uid === user.uid;
-                  const vsStat = !isMe && !p.isBot ? userStats?.versus?.[p.uid] : null;
-                  return (
-                    <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-red-100 flex items-center gap-2 md:gap-3 shadow-sm overflow-hidden">
-                      <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm md:text-base flex-shrink-0">{p.name.charAt(0)}</div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="font-medium text-gray-800 text-sm md:text-base truncate flex items-center">
-                          {p.name} {isMe && <span className="text-red-500 text-xs md:text-sm ml-1 flex-shrink-0">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg flex-shrink-0">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl flex-shrink-0">🤖</span>}
-                        </span>
-                        {!isMe && !p.isBot && (
-                          <span className="text-[10px] md:text-xs text-gray-500 font-bold truncate">
-                            {vsStat ? `⚔️ 상대전적: ${vsStat.wins || 0}승 ${vsStat.losses || 0}패` : '⚔️ 첫 대결'}
+              <div className="bg-red-50/50 p-4 md:p-6 rounded-xl md:rounded-2xl border-t-4 border-red-400 shadow-sm">
+                <div className="flex justify-between items-center mb-4 md:mb-6 border-b border-red-100 pb-2 md:pb-3">
+                  <h2 className="text-lg md:text-xl font-bold text-red-800">팀 B</h2>
+                  <span className="bg-red-100 text-red-800 text-[10px] md:text-xs font-bold px-2 py-1 md:px-3 md:py-1 rounded-full">{teamB.length}/3</span>
+                </div>
+                <div className="space-y-2 md:space-y-3">
+                  {teamB.map(p => {
+                    const isMe = p.uid === user.uid;
+                    const vsStat = !isMe && !p.isBot ? userStats?.versus?.[p.uid] : null;
+                    return (
+                      <div key={p.uid} className="bg-white p-2 md:p-3 rounded-lg md:rounded-xl border border-red-100 flex items-center gap-2 md:gap-3 shadow-sm overflow-hidden">
+                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-full bg-red-500 text-white flex items-center justify-center font-bold text-sm md:text-base flex-shrink-0">{p.name.charAt(0)}</div>
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-medium text-gray-800 text-sm md:text-base truncate flex items-center">
+                            {p.name} {isMe && <span className="text-red-500 text-xs md:text-sm ml-1 flex-shrink-0">(나)</span>}{p.uid === roomData.hostId && <span className="ml-1 text-amber-500 text-sm md:text-lg flex-shrink-0">👑</span>}{p.isBot && <span className="ml-1 text-sm md:text-xl flex-shrink-0">🤖</span>}
                           </span>
-                        )}
-                        {isMe && (
-                          <span className="text-[10px] md:text-xs text-red-500 font-bold truncate">
-                            내 캐릭터
-                          </span>
-                        )}
+                          {!isMe && !p.isBot && (
+                            <span className="text-[10px] md:text-xs text-gray-500 font-bold truncate">
+                              {vsStat ? `⚔️ 상대전적: ${vsStat.wins || 0}승 ${vsStat.losses || 0}패` : '⚔️ 첫 대결'}
+                            </span>
+                          )}
+                          {isMe && (
+                            <span className="text-[10px] md:text-xs text-red-500 font-bold truncate">
+                              내 캐릭터
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-                {teamB.length === 0 && <div className="text-red-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-red-200 rounded-lg md:rounded-xl">대기 중...</div>}
+                    )
+                  })}
+                  {teamB.length === 0 && <div className="text-red-400 text-xs md:text-sm py-3 md:py-4 text-center border-2 border-dashed border-red-200 rounded-lg md:rounded-xl">대기 중...</div>}
+                </div>
               </div>
             </div>
+            <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center">
+              <button onClick={onSwitchTeam} className="w-full sm:w-auto bg-white border border-gray-300 text-gray-700 px-6 py-3 md:px-8 md:py-4 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm md:text-base">팀 바꾸기</button>
+              {isHost ? (
+                <div className="flex flex-col sm:flex-row gap-3 md:gap-4 w-full sm:w-auto">
+                  <button onClick={onAddBot} className="w-full sm:w-auto bg-purple-50 text-purple-700 border border-purple-200 px-6 py-3 md:px-8 md:py-4 rounded-lg md:rounded-xl font-bold hover:bg-purple-100 transition-all shadow-sm text-sm md:text-base">컴퓨터 추가</button>
+                  <button onClick={onStart} className="w-full sm:w-auto bg-amber-600 text-white px-8 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-black text-base md:text-lg hover:bg-amber-700 transition-all shadow-md active:scale-95 border border-amber-700">말 선택 및 시작</button>
+                </div>
+              ) : (<div className="w-full sm:w-auto bg-gray-100 text-gray-500 border border-gray-200 px-6 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-bold text-center text-sm md:text-lg">방장의 시작을 대기 중...</div>)}
+            </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-3 md:gap-4 justify-center">
-            <button onClick={onSwitchTeam} className="w-full sm:w-auto bg-white border border-gray-300 text-gray-700 px-6 py-3 md:px-8 md:py-4 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm md:text-base">팀 바꾸기</button>
-            {isHost ? (
-              <div className="flex flex-col sm:flex-row gap-3 md:gap-4 w-full sm:w-auto">
-                <button onClick={onAddBot} className="w-full sm:w-auto bg-purple-50 text-purple-700 border border-purple-200 px-6 py-3 md:px-8 md:py-4 rounded-lg md:rounded-xl font-bold hover:bg-purple-100 transition-all shadow-sm text-sm md:text-base">컴퓨터 추가</button>
-                <button onClick={onStart} className="w-full sm:w-auto bg-amber-600 text-white px-8 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-black text-base md:text-lg hover:bg-amber-700 transition-all shadow-md active:scale-95 border border-amber-700">말 선택 및 시작</button>
+
+          {/* Mobile Overlay Background */}
+          {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
+
+          {/* Right Area: Chat & Logs (Mobile Slide-up / Desktop Fixed) */}
+          <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+            <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
+               <span className="font-black text-gray-800 text-lg">채팅 및 기록</span>
+               <button onClick={() => setIsMobileChatOpen(false)} className="text-gray-500 hover:text-red-500 font-bold px-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm shadow-sm">닫기 ✕</button>
+            </div>
+            
+            <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
+              <div className="p-3 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2 flex-shrink-0">방 기록</div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 flex flex-col-reverse custom-scrollbar">
+                {[...roomData.logs].reverse().map((log, idx) => (
+                  <div key={idx} className="text-xs md:text-sm text-gray-600 bg-white p-2 md:p-3 rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
+                    {log}
+                  </div>
+                ))}
               </div>
-            ) : (<div className="w-full sm:w-auto bg-gray-100 text-gray-500 border border-gray-200 px-6 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-bold text-center text-sm md:text-lg">방장의 시작을 대기 중...</div>)}
+            </div>
+            <ChatBox db={db} appId={appId} roomId={roomId} myPlayerInfo={myPlayerInfo} messages={messages} characters={roomData.characters} isMobileChatOpen={isMobileChatOpen} />
           </div>
+
+          <button onClick={() => setIsMobileChatOpen(true)} className="lg:hidden fixed bottom-6 right-6 z-[60] bg-amber-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform">
+            <MessageSquare size={28} />
+          </button>
         </div>
       );
     }
@@ -948,7 +1012,7 @@
       }, [ready.A, ready.B, roomData.status, isHost, roomId, db, appId]);
 
       return (
-        <div className="flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 min-h-full pb-12">
+        <div className="flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 min-h-full pb-12 w-full">
           <div className="mt-8 sm:mt-0 text-center">
             <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
             <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">
@@ -1120,6 +1184,8 @@
       // 타임아웃을 위한 현재 시간 상태
       const [now, setNow] = useState(Date.now());
       
+      const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
+
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
       const isSpectator = myPlayerInfo.team === 'spectator';
       const myTeam = isSpectator ? 'A' : (myPlayerInfo.team || 'A'); 
@@ -1135,7 +1201,7 @@
         const chatRef = collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`);
         const unsubscribe = onSnapshot(chatRef, (snapshot) => {
           const rawMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          rawMsgs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)); // 최신이 앞으로 (기존 reverse() 대응)
+          rawMsgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // 오래된순 정렬로 변경
           setMessages(rawMsgs);
         });
         return () => unsubscribe();
@@ -1631,20 +1697,32 @@
             </div>
           </div>
 
-          {/* Right Area: Chat & Logs (모바일에서는 화면 밖 하단 배치, 필요시 스크롤해서 확인) */}
-          <div className="w-full lg:w-80 h-[50dvh] lg:h-full bg-white border-t lg:border-t-0 lg:border-l border-gray-200 flex flex-col shadow-sm flex-shrink-0">
+          {/* Mobile Overlay Background */}
+          {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
+
+          {/* Right Area: Chat & Logs (Mobile Slide-up / Desktop Fixed) */}
+          <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+            <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
+               <span className="font-black text-gray-800 text-lg">채팅 및 기록</span>
+               <button onClick={() => setIsMobileChatOpen(false)} className="text-gray-500 hover:text-red-500 font-bold px-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm shadow-sm">닫기 ✕</button>
+            </div>
+            
             <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
-              <div className="p-2 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-xs md:text-sm flex items-center gap-2 flex-shrink-0">게임 기록</div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-1.5 md:space-y-3 flex flex-col-reverse custom-scrollbar">
+              <div className="p-3 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2 flex-shrink-0">방 기록</div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 flex flex-col-reverse custom-scrollbar">
                 {[...roomData.logs].reverse().map((log, idx) => (
-                  <div key={idx} className="text-[10px] md:text-xs text-gray-600 bg-white p-1.5 md:p-3 rounded-md md:rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
+                  <div key={idx} className="text-xs md:text-sm text-gray-600 bg-white p-2 md:p-3 rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
                     {log}
                   </div>
                 ))}
               </div>
             </div>
-            <ChatBox db={db} appId={appId} roomId={roomId} myPlayerInfo={myPlayerInfo} messages={messages} characters={roomData.characters} />
+            <ChatBox db={db} appId={appId} roomId={roomId} myPlayerInfo={myPlayerInfo} messages={messages} characters={roomData.characters} isMobileChatOpen={isMobileChatOpen} />
           </div>
+
+          <button onClick={() => setIsMobileChatOpen(true)} className="lg:hidden fixed bottom-6 right-6 z-[60] bg-amber-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform">
+            <MessageSquare size={28} />
+          </button>
         </div>
       );
     }
@@ -1652,13 +1730,18 @@
     // ==========================================
     // Chat Sub-component
     // ==========================================
-    function ChatBox({ db, appId, roomId, myPlayerInfo, messages, characters }) {
+    function ChatBox({ db, appId, roomId, myPlayerInfo, messages, characters, isMobileChatOpen }) {
       const [input, setInput] = useState('');
       const [chatMode, setChatMode] = useState('all');
-      const chatEndRef = useRef(null);
+      const chatContainerRef = useRef(null);
       const isSpectator = myPlayerInfo.team === 'spectator';
 
-      useEffect(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages]);
+      // 강제 스크롤 대신 컨테이너 내부의 scrollTop을 조작하여 화면 밀림 완벽 차단
+      useEffect(() => {
+        if (chatContainerRef.current) {
+          chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+        }
+      }, [messages, chatMode, isMobileChatOpen]);
 
       const sendChat = async (e) => {
         e.preventDefault();
@@ -1683,43 +1766,42 @@
 
       const EMOTICONS = [
         "👋 안녕하세요!",
-        "🙏 잘 부탁드립니다",
         "😎 아이고 쉽다~",
         "💃 얼쑤~!",
-        "🔥 나이스!",
-        "😭 아차차...",
-        "😡 부들부들..."
+        "🚗 슬슬 집에 가자~",
+        "😡 부들부들...",
+        "🤣 아이고 배야 ㅋㅋㅋ",
+        "💊 소화제 좀 가져와라~ 꺼억~"
       ];
 
       const visibleMessages = messages.filter(m => m.mode === 'all' || m.team === myPlayerInfo.team);
 
       return (
         <div className="flex-1 min-h-0 flex flex-col bg-white">
-          <div className="p-1.5 md:p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
-            <span className="font-bold text-gray-700 text-xs md:text-sm flex items-center gap-1 md:gap-2"><MessageSquare size={14} className="md:w-4 md:h-4"/> 채팅</span>
-            <div className="flex bg-gray-100 p-0.5 md:p-1 rounded-md md:rounded-lg">
-              <button onClick={() => setChatMode('all')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
+          <div className="p-2 md:p-3 border-b border-gray-200 flex justify-between items-center flex-shrink-0">
+            <span className="font-bold text-gray-700 text-sm flex items-center gap-2"><MessageSquare size={16}/> 채팅</span>
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+              <button onClick={() => setChatMode('all')} className={`text-[10px] md:text-xs px-3 py-1.5 rounded-md font-bold transition-colors ${chatMode === 'all' ? 'bg-white shadow-sm text-gray-800' : 'text-gray-500'}`}>전체</button>
               {!isSpectator && (
-                <button onClick={() => setChatMode('team')} className={`text-[9px] md:text-[10px] px-2 py-1 md:px-3 md:py-1.5 rounded md:rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
+                <button onClick={() => setChatMode('team')} className={`text-[10px] md:text-xs px-3 py-1.5 rounded-md font-bold transition-colors ${chatMode === 'team' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}>팀 채팅</button>
               )}
             </div>
           </div>
           
-          <div className="flex-1 min-h-0 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-4 custom-scrollbar">
+          <div ref={chatContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-3 md:space-y-4 custom-scrollbar">
             {visibleMessages.map(m => {
               const isMe = m.uid === myPlayerInfo.uid;
               const isTeamChat = m.mode === 'team';
               const charName = characters?.[m.team] ? CHARACTERS[characters[m.team]].name : (m.team === 'spectator' ? '관전' : m.team);
               return (
                 <div key={m.id} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                  <span className="text-[8px] md:text-[10px] font-bold text-gray-400 mb-0.5 md:mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
-                  <div className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl max-w-[90%] md:max-w-[85%] text-[10px] md:text-sm shadow-sm ${
+                  <span className="text-[10px] font-bold text-gray-400 mb-1 px-1">{m.name} [{charName}] {isTeamChat ? '(팀 전용)' : ''}</span>
+                  <div className={`px-4 py-2 rounded-xl max-w-[90%] md:max-w-[85%] text-xs md:text-sm shadow-sm ${
                     isTeamChat ? 'bg-blue-600 text-white rounded-tr-sm' : (isMe ? 'bg-gray-800 text-white rounded-tr-sm' : 'bg-gray-100 text-gray-800 rounded-tl-sm')
                   }`}>{m.text}</div>
                 </div>
               );
             })}
-            <div ref={chatEndRef} />
           </div>
 
           {/* 빠른 이모티콘(매크로) 영역 추가 */}
@@ -1733,9 +1815,9 @@
             ))}
           </div>
 
-          <form onSubmit={sendChat} className="p-2 md:p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0 pt-0 md:pt-0">
+          <form onSubmit={sendChat} className="p-3 md:p-4 border-t border-gray-200 bg-gray-50 flex-shrink-0">
             <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder={chatMode === 'all' ? "메시지..." : "팀원 메시지..."}
-              className="w-full px-3 py-2 md:px-4 md:py-3 bg-white border border-gray-300 rounded-lg md:rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs md:text-sm text-gray-800 transition-all shadow-sm" />
+              className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 text-xs md:text-sm text-gray-800 transition-all shadow-sm" />
           </form>
         </div>
       );
