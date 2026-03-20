@@ -18,17 +18,23 @@
     
     /* 3D 렌더링 필수 속성 (평면화 방지) */
     .transform-style-3d { 
-      transform-style: preserve-3d; 
-      -webkit-transform-style: preserve-3d;
+      transform-style: preserve-3d !important; 
+      -webkit-transform-style: preserve-3d !important;
+      backface-visibility: visible !important;
+    }
+    
+    .backface-hidden {
+      backface-visibility: hidden !important;
+      -webkit-backface-visibility: hidden !important;
     }
     
     /* 3D 윷 던지기 공중 물리 애니메이션 */
     @keyframes yutToss {
-      0% { opacity: 1; transform: translate3d(var(--sx), 100vh, -200px) rotateX(0deg) rotateZ(0deg) scale(0.5); }
-      40% { opacity: 1; transform: translate3d(calc(var(--sx) + (var(--dx)*0.5)), -15vh, 400px) rotateX(1080deg) rotateZ(calc(var(--rz) * 2)) scale(1.4); } 
-      70% { opacity: 1; transform: translate3d(var(--dx), var(--dy), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(var(--rz)) scale(1); } 
-      85% { opacity: 1; transform: translate3d(calc(var(--dx) + 10px), calc(var(--dy) - 30px), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(calc(var(--rz) + 10deg)) scale(1); } 
-      100% { opacity: 1; transform: translate3d(calc(var(--dx) + 15px), var(--dy), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(calc(var(--rz) + 15deg)) scale(1); } 
+      0% { transform: translate3d(var(--sx), 100vh, -200px) rotateX(0deg) rotateZ(0deg) scale(0.5); }
+      30% { transform: translate3d(calc(var(--sx) + (var(--dx)*0.5)), -15vh, 400px) rotateX(1080deg) rotateZ(calc(var(--rz) * 2)) scale(1.4); } 
+      60% { transform: translate3d(var(--dx), var(--dy), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(var(--rz)) scale(1); } 
+      80% { transform: translate3d(calc(var(--dx) + 10px), calc(var(--dy) - 20px), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(calc(var(--rz) + 5deg)) scale(1); } 
+      100% { transform: translate3d(calc(var(--dx) + 15px), var(--dy), 0) rotateX(calc(1800deg + var(--frx))) rotateZ(calc(var(--rz) + 10deg)) scale(1); } 
     }
     @keyframes textPop {
       0% { opacity: 0; transform: scale(0.5) translateY(20px); }
@@ -45,7 +51,7 @@
     import React, { useState, useEffect, useRef } from 'https://esm.sh/react@18.2.0';
     import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-    import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+    import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
     import { getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, arrayUnion, query, orderBy, serverTimestamp, deleteDoc, addDoc } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
     // --- Lucide 아이콘 대체용 인라인 SVG 컴포넌트 ---
@@ -55,9 +61,12 @@
     const CheckCircle2 = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><polyline points="16 8 10 14 8 12"></polyline></svg>;
     const MessageSquare = ({ size=24, className }) => <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>;
 
-    // --- Firebase Initialization ---
-    // 🔴 [매우 중요] 전달받은 본인의 파이어베이스 설정값을 적용합니다.
-    const fallbackConfig = {
+    // ==========================================
+    // Firebase Initialization (강제 고정 설정)
+    // ==========================================
+    // 더 이상 캔버스 임시 변수(__firebase_config)를 참조하지 않고,
+    // 오직 질문자님의 데이터베이스로만 다이렉트로 연결되도록 코드를 고정했습니다.
+    const firebaseConfig = {
       apiKey: "AIzaSyDPbR6XUdb2CR5G0WhLTWINPIpRGTq4VWc",
       authDomain: "yutnori-8d609.firebaseapp.com",
       projectId: "yutnori-8d609",
@@ -66,14 +75,13 @@
       appId: "1:189988756866:web:b24588cb77db9b8817039b",
       measurementId: "G-TN86TP9Y20"
     };
-    
-    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : fallbackConfig;
-    const isFirebaseConfigured = Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey !== "여기에_API_KEY_입력";
 
-    const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
-    const auth = app ? getAuth(app) : null;
-    const db = app ? getFirestore(app) : null;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'yut-nori-app-github';
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    
+    // 캔버스, 깃허브, 스마트폰 등 어디서 접속하든 무조건 이 폴더를 보게 강제 고정
+    const GLOBAL_APP_ID = 'yutnori_global_server_v100'; 
 
     // --- Yut Board Logic ---
     const BOARD_GRAPH = {
@@ -109,9 +117,6 @@
       '손권': { hanja: '孫', name: '손권', bgDark: '#7f1d1d', bgLight: '#ef4444' }
     };
 
-    // ==========================================
-    // 3D Chess Piece Component
-    // ==========================================
     function ChessPiece3D({ character, count, size = "normal" }) {
       if (!character) return null;
       const isLarge = size === 'large';
@@ -145,9 +150,6 @@
       );
     }
 
-    // ==========================================
-    // 완벽한 3D 반원통 윷가락 렌더링 컴포넌트
-    // ==========================================
     function YutStick3D({ state, isMarked, startX, destX, destY, destRotZ, delay }) {
       const finalRotX = state === 1 ? 180 : 0; 
       const R = 20; 
@@ -208,25 +210,21 @@
     // ==========================================
     function App() {
       const [user, setUser] = useState(null);
-      const [authError, setAuthError] = useState(null); // 에러 상태 추가
+      const [authError, setAuthError] = useState(null); 
       const [currentView, setCurrentView] = useState('lobby'); 
       const [rooms, setRooms] = useState([]);
       const [activeRoomId, setActiveRoomId] = useState(null);
       const [roomData, setRoomData] = useState(null);
       const [playerName, setPlayerName] = useState(`유저_${Math.floor(Math.random() * 1000)}`);
       
+      // 사용자 인증
       useEffect(() => {
-        if (!auth) {
-          setAuthError("⚠️ [오류] Firebase 설정이 누락되었습니다!\nHTML 코드 내부의 fallbackConfig에 본인의 파이어베이스 API 키를 입력하셔야 깃허브에서 정상 작동합니다.");
-          return;
-        }
         const initAuth = async () => {
           try {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) await signInWithCustomToken(auth, __initial_auth_token);
-            else await signInAnonymously(auth);
+            await signInAnonymously(auth);
           } catch (err) { 
             console.error("Auth Error:", err); 
-            setAuthError(err.message); // 화면에 에러 표시
+            setAuthError(err.message); 
           }
         };
         initAuth();
@@ -234,18 +232,24 @@
         return () => unsubscribe();
       }, []);
 
+      // 방 목록 불러오기
       useEffect(() => {
         if (!user || !db) return;
-        const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'yut_rooms');
+        // GLOBAL_APP_ID를 사용하여 모두가 같은 경로를 바라보게 강제
+        const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
         const unsubscribe = onSnapshot(roomsRef, (snapshot) => {
           setRooms(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished'));
+        }, (error) => {
+          console.error(error);
+          setAuthError("방 목록을 불러올 권한이 없습니다. 파이어베이스 규칙을 확인해주세요.");
         });
         return () => unsubscribe();
       }, [user]);
 
+      // 특정 방 데이터 구독하기
       useEffect(() => {
         if (!user || !db || !activeRoomId) return;
-        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId);
+        const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
         const unsubscribe = onSnapshot(roomRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
@@ -264,7 +268,7 @@
 
       const createRoom = async () => {
         if (!user) return;
-        const newRoomRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'yut_rooms'));
+        const newRoomRef = doc(collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms'));
         await setDoc(newRoomRef, {
           name: `${playerName}의 방`,
           hostId: user.uid,
@@ -291,7 +295,7 @@
         if (room.players.find(p => p.uid === user.uid)) { setActiveRoomId(roomId); return; }
         
         const assignedTeam = room.players.filter(p => p.team === 'A').length <= room.players.filter(p => p.team === 'B').length ? 'A' : 'B';
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
+        await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', roomId), {
           players: arrayUnion({ uid: user.uid, name: playerName, team: assignedTeam }),
           logs: arrayUnion(`${playerName}님이 입장했습니다.`)
         });
@@ -300,7 +304,7 @@
 
       const leaveRoom = async () => {
         if (!user || !activeRoomId || !roomData) return;
-        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId);
+        const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
         const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
         if (updatedPlayers.length === 0) await deleteDoc(roomRef);
         else await updateDoc(roomRef, {
@@ -315,7 +319,7 @@
       const addBot = async () => {
         if (!user || !activeRoomId || !roomData || roomData.hostId !== user.uid || roomData.players.length >= 6) return;
         const assignedTeam = roomData.players.filter(p => p.team === 'A').length <= roomData.players.filter(p => p.team === 'B').length ? 'A' : 'B';
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), {
+        await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId), {
           players: arrayUnion({ uid: `bot_${Date.now()}`, name: `컴퓨터`, team: assignedTeam, isBot: true }),
           logs: arrayUnion(`컴퓨터가 추가되었습니다.`)
         });
@@ -325,16 +329,15 @@
         if (!user || !activeRoomId || !roomData) return;
         const updatedPlayers = roomData.players.map(p => p.uid === user.uid ? { ...p, team: p.team === 'A' ? 'B' : 'A' } : p);
         if (updatedPlayers.filter(p => p.team === 'A').length > 3 || updatedPlayers.filter(p => p.team === 'B').length > 3) return;
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), { players: updatedPlayers });
+        await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId), { players: updatedPlayers });
       };
 
       const moveToCharacterSelect = async () => {
         if (!user || !activeRoomId || !roomData || roomData.hostId !== user.uid) return;
         if (roomData.players.filter(p => p.team === 'A').length === 0 || roomData.players.filter(p => p.team === 'B').length === 0) return alert("양 팀에 인원이 필요합니다.");
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', activeRoomId), { status: 'character_select' });
+        await updateDoc(doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId), { status: 'character_select' });
       };
 
-      // 에러가 났을 때 무한 '접속 중' 대신 에러 화면 출력
       if (authError) return (
         <div className="flex h-screen flex-col items-center justify-center bg-gray-100 font-sans p-6 text-center">
           <div className="bg-white p-8 rounded-2xl shadow-xl border-2 border-red-500 max-w-lg">
@@ -343,20 +346,20 @@
             <p className="text-gray-600 font-bold mb-2">💡 해결 방법:</p>
             <ol className="text-left text-gray-500 text-sm space-y-2 list-decimal list-inside">
               <li>파이어베이스 콘솔의 <b>Authentication(인증) &gt; Sign-in method</b>에서 <b>'익명(Anonymous)'</b> 로그인이 켜져 있는지 확인하세요.</li>
-              <li><b>Authentication(인증) &gt; Settings &gt; 승인된 도메인</b>에 질문자님의 <b>깃허브 주소(예: 본인아이디.github.io)</b>를 추가하세요.</li>
+              <li><b>Firestore Database &gt; 규칙(Rules)</b>이 올바르게 저장되었는지 확인하세요.</li>
             </ol>
           </div>
         </div>
       );
-      if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버와 통신 중입니다...</div>;
+      if (!user) return <div className="flex h-screen items-center justify-center bg-gray-100 font-sans font-bold text-xl text-gray-500 animate-pulse">서버 연결 중...</div>;
 
       return (
         <div className="min-h-screen bg-[#f3f4f6] font-sans text-gray-800">
           {currentView === 'lobby' && <LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} />}
           {currentView === 'room' && <WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} />}
-          {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={appId} />}
-          {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={appId} />}
-          {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={appId} />}
+          {currentView === 'character_select' && <CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'turn_select' && <TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} />}
+          {currentView === 'game' && <GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} />}
         </div>
       );
     }
@@ -549,7 +552,7 @@
     }
 
     // ==========================================
-    // Turn Select View (선후공 정하기 로직 - 완벽히 가림 처리됨)
+    // Turn Select View 
     // ==========================================
     function TurnSelectView({ roomData, roomId, user, db, appId }) {
       const isHost = roomData.hostId === user.uid;
@@ -597,13 +600,13 @@
                      `}
                      style={{ transformStyle: 'preserve-3d', WebkitTransformStyle: 'preserve-3d', transform: isRevealed ? 'rotateY(180deg)' : 'rotateY(0deg)' }}>
                   
-                  {/* Card Back (Faced down) */}
+                  {/* Card Back */}
                   <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900 rounded-3xl border-4 border-slate-500 shadow-xl flex items-center justify-center"
                        style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(0deg)' }}>
                     <div className="text-6xl opacity-40 font-black text-white">?</div>
                   </div>
 
-                  {/* Card Front (Revealed) */}
+                  {/* Card Front */}
                   <div className="absolute inset-0 rounded-3xl border-4 flex flex-col items-center justify-center shadow-2xl"
                        style={{ 
                          backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)',
