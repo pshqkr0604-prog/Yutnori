@@ -393,55 +393,7 @@
         return () => unsubscribe();
       }, []);
 
-      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
-      useEffect(() => {
-        if (!user || !db) return;
-        const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
-        const unsubscribe = onSnapshot(roomsRef, (snapshot) => {
-          const fetchedRooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished');
-          setRooms(fetchedRooms);
-
-          // 로그인 후 로비에 있을 때, 내가 참여중인 방이 있으면 즉시 자동 재접속(activeRoomId 세팅)
-          setActiveRoomId(prevId => {
-             if (!prevId) {
-                const myRoom = fetchedRooms.find(r => r.players.some(p => p.uid === user.uid) || r.spectators?.some(p => p.uid === user.uid));
-                if (myRoom) return myRoom.id;
-             }
-             return prevId;
-          });
-
-        }, (error) => {
-          console.error(error);
-          setAuthError("방 목록을 불러올 수 없습니다.");
-        });
-        return () => unsubscribe();
-      }, [user, db]);
-
-      // 특정 방 구독 및 뷰(View) 상태 동기화
-      // currentView를 의존성에서 제거하여 스냅샷 갱신 시 연결이 끊기지 않도록 완벽 해결
-      useEffect(() => {
-        if (!user || !db || !activeRoomId) return;
-        const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
-        const unsubscribe = onSnapshot(roomRef, (docSnap) => {
-          if (docSnap.exists()) {
-            const data = docSnap.data();
-            setRoomData(data);
-            
-            setCurrentView(prev => {
-              if (data.status === 'playing' && prev !== 'game') return 'game';
-              if (data.status === 'turn_select' && prev !== 'turn_select') return 'turn_select';
-              if (data.status === 'character_select' && prev !== 'character_select') return 'character_select';
-              if (data.status === 'lobby' && prev !== 'room') return 'room';
-              return prev;
-            });
-          } else {
-            setActiveRoomId(null);
-            setCurrentView('lobby');
-          }
-        });
-        return () => unsubscribe();
-      }, [user, activeRoomId, db]);
-
+      // 이모티콘 팝업 표시 감지
       useEffect(() => {
         if (roomData?.emoticonEvent && roomData.emoticonEvent.id !== lastEmoticonEventId.current) {
           lastEmoticonEventId.current = roomData.emoticonEvent.id;
@@ -450,6 +402,7 @@
         }
       }, [roomData?.emoticonEvent]);
 
+      // 사용자 접속 상태 갱신 (30초마다)
       useEffect(() => {
         if (!user || !db || !playerName) return;
         const userRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_users', user.uid);
@@ -465,6 +418,7 @@
         return () => clearInterval(intervalId);
       }, [user, db, playerName]);
 
+      // 사용자 전적(승률) 불러오기
       useEffect(() => {
         if (!user || !db) return;
         const userRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_users', user.uid);
@@ -474,7 +428,53 @@
         return () => unsubscribe();
       }, [user]);
 
-      // 방 만들기 (전통/로컬 룰 추가)
+      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
+      useEffect(() => {
+        if (!user || !db) return;
+        const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
+        const unsubscribe = onSnapshot(roomsRef, (snapshot) => {
+          const fetchedRooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished');
+          setRooms(fetchedRooms);
+
+          // 로그인 후 로비에 있을 때, 내가 참여중인 방이 있으면 즉시 자동 재접속
+          setActiveRoomId(prevId => {
+             if (!prevId) {
+                const myRoom = fetchedRooms.find(r => r.players.some(p => p.uid === user.uid) || r.spectators?.some(p => p.uid === user.uid));
+                if (myRoom) return myRoom.id;
+             }
+             return prevId;
+          });
+        }, (error) => {
+          console.error(error);
+          setAuthError("방 목록을 불러올 수 없습니다.");
+        });
+        return () => unsubscribe();
+      }, [user, db]);
+
+      // 특정 방 구독 및 뷰(View) 상태 동기화
+      useEffect(() => {
+        if (!user || !db || !activeRoomId) return;
+        const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
+        const unsubscribe = onSnapshot(roomRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setRoomData(data);
+            setCurrentView(prev => {
+              if (data.status === 'playing' && prev !== 'game') return 'game';
+              if (data.status === 'turn_select' && prev !== 'turn_select') return 'turn_select';
+              if (data.status === 'character_select' && prev !== 'character_select') return 'character_select';
+              if (data.status === 'lobby' && prev !== 'room') return 'room';
+              return prev;
+            });
+          } else {
+            setActiveRoomId(null);
+            setCurrentView('lobby');
+          }
+        });
+        return () => unsubscribe();
+      }, [user, activeRoomId, db]);
+
+      // 방 만들기
       const createRoom = async (isPrivate, roomPassword, roomRule) => {
         if (!user) return;
         try {
@@ -552,7 +552,7 @@
         }
       };
 
-      // 방 나가기 및 기권 패배 처리
+      // 방 나가기 및 자동 폭파/기권 처리 완벽 로직
       const leaveRoom = async () => {
         if (!user || !activeRoomId || !roomData) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -560,6 +560,7 @@
         const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
         const isSpectator = roomData.spectators?.some(p => p.uid === user.uid);
 
+        // 1. 관전자인 경우 조용히 나감
         if (isSpectator) {
            const updatedSpectators = roomData.spectators.filter(p => p.uid !== user.uid);
            await updateDoc(roomRef, {
@@ -571,7 +572,16 @@
            return;
         }
 
-        if (roomData.status === 'playing') {
+        // 2. 게임 종료 상태에서 나가면 방을 완전 삭제(클린업)
+        if (roomData.status === 'finished') {
+           await deleteDoc(roomRef);
+           setActiveRoomId(null);
+           setCurrentView('lobby');
+           return;
+        }
+
+        // 3. 게임 도중(진행중, 캐릭터선택, 선후공 결정 등) 나가는 경우 (기권 패배 처리)
+        if (roomData.status !== 'lobby') {
           if (confirm("방을 나가면 기권으로 패배 처리됩니다.\n정말 나가시겠습니까?")) {
             const playingTeam = myPlayerInfo.team;
             const oppTeam = playingTeam === 'A' ? 'B' : 'A';
@@ -601,13 +611,19 @@
                } catch(err) { console.error("전적 업데이트 에러:", err); }
             });
 
-            await updateDoc(roomRef, { status: 'finished', winnerTeam: oppTeam, logs: arrayUnion(`🚨 ${myPlayerInfo.name}님이 기권했습니다. ${oppTeam}팀 승리!`) });
+            await updateDoc(roomRef, { 
+              status: 'finished', 
+              winnerTeam: oppTeam, 
+              logs: arrayUnion(`🚨 ${myPlayerInfo.name}님이 기권했습니다. ${oppTeam}팀 승리!`) 
+            });
+            // 나가기를 눌러 상태가 finished가 되었으므로 즉시 리턴하고 승패 화면을 띄움
             return;
           } else {
             return;
           }
         }
 
+        // 4. 로비 상태에서 정상 퇴장
         const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
         if (updatedPlayers.length === 0) {
           await deleteDoc(roomRef);
@@ -673,15 +689,15 @@
           {currentView === 'auth' && <AuthView auth={auth} setAuthError={setAuthError} />}
           {currentView === 'lobby' && <div className="h-full w-full overflow-y-auto"><LobbyView playerName={playerName} setPlayerName={setPlayerName} rooms={rooms} onCreate={createRoom} onJoin={joinRoom} user={user} onDelete={deleteRoom} auth={auth} userStats={userStats} db={db} appId={GLOBAL_APP_ID} /></div>}
           {currentView === 'room' && <div className="h-full w-full overflow-y-auto"><WaitingRoomView roomData={roomData} user={user} onSwitchTeam={switchTeam} onStart={moveToCharacterSelect} onLeave={leaveRoom} onAddBot={addBot} userStats={userStats} db={db} appId={GLOBAL_APP_ID} roomId={activeRoomId} /></div>}
-          {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
-          {currentView === 'turn_select' && <div className="h-full w-full overflow-y-auto"><TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} /></div>}
+          {currentView === 'character_select' && <div className="h-full w-full overflow-y-auto"><CharacterSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} onLeave={leaveRoom} /></div>}
+          {currentView === 'turn_select' && <div className="h-full w-full overflow-y-auto"><TurnSelectView roomData={roomData} roomId={activeRoomId} user={user} db={db} appId={GLOBAL_APP_ID} onLeave={leaveRoom} /></div>}
           {currentView === 'game' && <div className="h-full w-full overflow-y-auto lg:overflow-hidden"><GameView roomData={roomData} roomId={activeRoomId} user={user} onLeave={leaveRoom} db={db} appId={GLOBAL_APP_ID} /></div>}
         </div>
       );
     }
 
     // ==========================================
-    // Lobby View (룰 설정 추가)
+    // Lobby View
     // ==========================================
     function LobbyView({ playerName, setPlayerName, rooms, onCreate, onJoin, user, onDelete, auth, userStats, db, appId }) {
       const [onlineUsers, setOnlineUsers] = useState([]);
@@ -690,7 +706,7 @@
       const [isMobileChatOpen, setIsMobileChatOpen] = useState(false); 
       const [isPrivate, setIsPrivate] = useState(false);
       const [roomPassword, setRoomPassword] = useState('');
-      const [roomRule, setRoomRule] = useState('traditional'); // 룰 선택 상태
+      const [roomRule, setRoomRule] = useState('traditional');
       const lobbyChatRef = useRef(null);
 
       const handleLogout = async () => { if(confirm("로그아웃 하시겠습니까?")) await signOut(auth); }
@@ -703,14 +719,12 @@
           const activeUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(u => u.lastOnline && (now - u.lastOnline < 60000)).filter(u => u.name); 
           setOnlineUsers(activeUsers);
         });
-
         const chatRef = collection(db, 'artifacts', appId, 'public', 'data', 'yut_lobby_chat');
         const unsubscribeChat = onSnapshot(chatRef, (snapshot) => {
           const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); 
           setLobbyMessages(msgs);
         });
-
         return () => { unsubscribeUsers(); unsubscribeChat(); };
       }, [db, appId]);
 
@@ -793,6 +807,10 @@
                 rooms.map(room => {
                   const isMyGame = user && room.players.some(p => p.uid === user.uid);
                   const isSpectator = user && room.spectators?.some(p => p.uid === user.uid);
+                  const isHost = user && room.hostId === user.uid;
+                  // 유령 방 처리: 5분 이상 액션이 없으면 누구나 지울 수 있음
+                  const isGhostRoom = room.lastActionTime && (Date.now() - room.lastActionTime > 300000); 
+
                   let btnText = '참가하기';
                   if (isMyGame) {
                      btnText = room.status === 'lobby' ? '참가하기' : '이어하기';
@@ -804,7 +822,7 @@
 
                   return (
                     <div key={room.id} className="bg-white p-4 md:p-5 rounded-xl md:rounded-2xl shadow-sm border border-gray-200 hover:border-amber-400 transition-all relative group flex flex-col justify-between min-h-[160px]">
-                      {user && room.hostId === user.uid && (
+                      {(isHost || isGhostRoom) && (
                         <button onClick={(e) => { e.stopPropagation(); onDelete(room.id); }} className="absolute top-3 right-3 md:top-4 md:right-4 text-gray-400 hover:text-red-500 transition-colors z-10" title="방 삭제">
                           <Trash2 size={16} />
                         </button>
@@ -895,21 +913,7 @@
     // Waiting Room View
     // ==========================================
     function WaitingRoomView({ roomData, user, onSwitchTeam, onStart, onLeave, onAddBot, userStats, db, appId, roomId }) {
-      const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
-      const [messages, setMessages] = useState([]);
-
-      useEffect(() => {
-        if (!db || !roomId) return;
-        const chatRef = collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`);
-        const q = query(chatRef, orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-          setMessages(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).reverse());
-        });
-        return () => unsubscribe();
-      }, [db, roomId, appId]);
-
-      if (!roomData) return null;
       const teamA = roomData.players.filter(p => p.team === 'A');
       const teamB = roomData.players.filter(p => p.team === 'B');
       const isHost = roomData.hostId === user.uid;
@@ -1004,45 +1008,14 @@
               ) : (<div className="w-full sm:w-auto bg-gray-100 text-gray-500 border border-gray-200 px-6 py-3 md:px-12 md:py-4 rounded-lg md:rounded-xl font-bold text-center text-sm md:text-lg">방장의 시작을 대기 중...</div>)}
             </div>
           </div>
-
-          {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
-          <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
-            <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
-               <span className="font-black text-gray-800 text-lg">방향 채팅방</span>
-               <button onClick={() => setIsMobileChatOpen(false)} className="text-gray-500 hover:text-red-500 font-bold px-4 py-1.5 bg-white border border-gray-300 rounded-lg text-sm shadow-sm">닫기 ✕</button>
-            </div>
-            
-            <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
-              <div className="p-3 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2 flex-shrink-0">방 참가자</div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 custom-scrollbar">
-                {roomData.players.map(p => (
-                  <div key={p.uid} className="flex items-center gap-2 text-xs md:text-sm font-medium text-gray-700 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                    <div className={`w-2 h-2 rounded-full ${p.team==='A' ? 'bg-blue-500':'bg-red-500'} flex-shrink-0`}></div>
-                    <span className="truncate flex-1">{p.name}</span>
-                  </div>
-                ))}
-                {roomData.spectators?.map(p => (
-                  <div key={p.uid} className="flex items-center gap-2 text-xs md:text-sm font-medium text-gray-400 p-2 bg-gray-50 rounded-lg border border-gray-100 shadow-sm">
-                    <div className="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"></div>
-                    <span className="truncate flex-1">{p.name} (관전)</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <ChatBox db={db} appId={appId} roomId={roomId} myPlayerInfo={myPlayerInfo} messages={messages} characters={roomData.characters} isMobileChatOpen={isMobileChatOpen} />
-          </div>
-
-          <button onClick={() => setIsMobileChatOpen(true)} className="lg:hidden fixed bottom-6 right-6 z-[60] bg-amber-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform">
-            <MessageSquare size={28} />
-          </button>
         </div>
       );
     }
 
     // ==========================================
-    // Character Select View (1줄 배열 유지)
+    // Character Select View 
     // ==========================================
-    function CharacterSelectView({ roomData, roomId, user, db, appId }) {
+    function CharacterSelectView({ roomData, roomId, user, db, appId, onLeave }) {
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
       const myTeam = myPlayerInfo?.team;
       const isSpectator = myTeam === 'spectator';
@@ -1074,13 +1047,19 @@
             status: 'turn_select', 
             turnData: { winningIdx: winningIdx },
             logs: arrayUnion('양 팀 모두 준비 완료. 선후공 결정을 진행합니다.'),
-            lastActionTime: Date.now() // 타임아웃 갱신
+            lastActionTime: Date.now() 
           });
         }
       }, [ready.A, ready.B, roomData.status, isHost, roomId, db, appId]);
 
       return (
-        <div className="flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 min-h-full pb-12 w-full">
+        <div className="flex flex-col items-center justify-start sm:justify-center bg-[#f3f4f6] p-4 md:p-6 min-h-full pb-12 w-full relative">
+          <div className="absolute top-4 right-4 md:top-6 md:right-6 z-50">
+             <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 text-gray-500 hover:text-gray-800 font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg bg-white border border-gray-200 shadow-sm transition-colors text-xs md:text-sm whitespace-nowrap">
+               <LogOut size={14} className="md:w-4 md:h-4"/> 나가기
+             </button>
+          </div>
+
           <div className="mt-8 sm:mt-0 text-center">
             <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2">말(캐릭터) 선택</h1>
             <p className="text-gray-500 mb-6 md:mb-10 text-xs md:text-base px-4">
@@ -1093,7 +1072,7 @@
               <h2 className="text-lg md:text-xl font-bold text-blue-800 mb-4 md:mb-6 bg-blue-100 px-6 py-1.5 md:px-8 md:py-2 rounded-full border border-blue-200 shadow-sm flex items-center gap-2">
                 팀 A {ready.A && <span className="text-[10px] md:text-xs bg-blue-500 text-white px-2 py-0.5 md:py-1 rounded-full">준비완료</span>}
               </h2>
-              <div className="flex flex-row justify-start md:justify-center gap-2 md:gap-6 mb-4 md:mb-6 w-full overflow-x-auto flex-nowrap custom-scrollbar">
+              <div className="flex flex-row justify-center gap-2 md:gap-6 mb-4 md:mb-6 w-full">
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.A === charName;
@@ -1123,7 +1102,7 @@
               <h2 className="text-lg md:text-xl font-bold text-red-800 mb-4 md:mb-6 bg-red-100 px-6 py-1.5 md:px-8 md:py-2 rounded-full border border-red-200 shadow-sm flex items-center gap-2">
                 팀 B {ready.B && <span className="text-[10px] md:text-xs bg-red-500 text-white px-2 py-0.5 md:py-1 rounded-full">준비완료</span>}
               </h2>
-              <div className="flex flex-row justify-start md:justify-center gap-2 md:gap-6 mb-4 md:mb-6 w-full overflow-x-auto flex-nowrap custom-scrollbar">
+              <div className="flex flex-row justify-center gap-2 md:gap-6 mb-4 md:mb-6 w-full">
                 {Object.keys(CHARACTERS).map(charName => {
                   const char = CHARACTERS[charName];
                   const isSelectedByTeam = roomData.characters.B === charName;
@@ -1154,9 +1133,9 @@
     }
 
     // ==========================================
-    // Turn Select View (중앙 정렬 및 아무나 선공 클릭 가능)
+    // Turn Select View 
     // ==========================================
-    function TurnSelectView({ roomData, roomId, user, db, appId }) {
+    function TurnSelectView({ roomData, roomId, user, db, appId, onLeave }) {
       const isPlayer = roomData.players.some(p => p.uid === user.uid && !p.isBot);
       const turnData = roomData.turnData || {};
 
@@ -1173,7 +1152,7 @@
           'turnData.selected': idx,
           'turnData.firstTeam': firstTeam,
           logs: arrayUnion(`카드가 선택되었습니다! ${firstTeam === 'A' ? '팀 A' : '팀 B'}가 선공을 잡았습니다!`),
-          lastActionTime: Date.now() // 타임아웃 시작 시간 기록
+          lastActionTime: Date.now() 
         });
 
         setTimeout(async () => {
@@ -1181,13 +1160,19 @@
             status: 'playing',
             turn: firstTeam,
             throwChances: 1,
-            lastActionTime: Date.now() // 턴 시작 시간 갱신
+            lastActionTime: Date.now() 
           });
         }, 3000);
       };
 
       return (
         <div className="flex-1 w-full h-full flex flex-col items-center justify-center bg-[#f3f4f6] p-4 md:p-6 relative overflow-hidden min-h-[100dvh]">
+          <div className="absolute top-4 right-4 md:top-6 md:right-6 z-50">
+             <button onClick={onLeave} className="flex items-center gap-1 md:gap-2 text-gray-500 hover:text-gray-800 font-bold px-3 py-1.5 md:px-4 md:py-2 rounded-lg bg-white border border-gray-200 shadow-sm transition-colors text-xs md:text-sm whitespace-nowrap">
+               <LogOut size={14} className="md:w-4 md:h-4"/> 나가기
+             </button>
+          </div>
+
           <h1 className="text-4xl md:text-5xl font-black text-gray-800 mb-2 md:mb-4 tracking-tighter">선후공 결정</h1>
           <p className="text-gray-500 mb-8 md:mb-16 text-sm md:text-lg font-medium text-center">
             {isPlayer ? '카드를 하나 먼저 선택하여 운명을 시험하세요.' : '플레이어들이 선후공 카드를 고르고 있습니다...'}
@@ -1249,14 +1234,10 @@
       const lastRollingEventId = useRef(null);
       const lastTurn = useRef(roomData.turn);
 
-      // 도착지 미리보기를 위한 상태
       const [previewPos, setPreviewPos] = useState([]);
-      // 로컬룰: 여러 도착지 중 사용자가 직접 클릭하여 결정할 때 저장하는 상태
       const [pendingMove, setPendingMove] = useState(null);
 
-      // 타임아웃을 위한 현재 시간 상태
       const [now, setNow] = useState(Date.now());
-      
       const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
 
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
@@ -1269,19 +1250,17 @@
       const isMyTurn = !isSpectator && ((roomData.turn === myPlayerInfo.team) || (isHost && isBotTurn));
       const playingTeam = isMyTurn ? roomData.turn : myTeam;
 
-      // 채팅 메시지 수신
       useEffect(() => {
         if (!db || !roomId) return;
         const chatRef = collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`);
         const unsubscribe = onSnapshot(chatRef, (snapshot) => {
           const rawMsgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          rawMsgs.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)); 
+          rawMsgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); 
           setMessages(rawMsgs);
         });
         return () => unsubscribe();
       }, [db, roomId, appId]);
 
-      // 턴 변경 사운드 효과
       useEffect(() => {
         if (roomData.status === 'playing' && roomData.turn !== lastTurn.current) {
           lastTurn.current = roomData.turn;
@@ -1289,7 +1268,6 @@
         }
       }, [roomData.turn, roomData.status]);
 
-      // 윷 모션 이벤트 수신 및 애니메이션
       useEffect(() => {
         if (roomData?.rollingEvent && roomData.rollingEvent.id !== lastRollingEventId.current) {
           lastRollingEventId.current = roomData.rollingEvent.id;
@@ -1304,13 +1282,11 @@
         }
       }, [roomData?.rollingEvent]);
 
-      // 다른 말을 선택하면 보류 중인 이동(갈림길 선택) 취소
       useEffect(() => {
          setPendingMove(null);
          setPreviewPos([]);
       }, [selectedPiece]);
 
-      // 타임아웃 카운터 1초마다 갱신
       useEffect(() => {
         if (roomData?.status !== 'playing') return;
         const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -1374,17 +1350,11 @@
         }, 1200); 
       };
 
-      // ----------------------------------------------------
-      // [신규] 갈림길 및 로컬룰을 포함한 완벽한 다중 목적지 계산
-      // ----------------------------------------------------
       const executeMove = async (pieceId, destPos, yutKey, queueIndex) => {
         const steps = YUT_RESULTS[yutKey].steps;
-        const isBackDo = steps === -1;
         const myPieces = [...roomData.pieces[playingTeam]];
         const targetPiece = myPieces.find(p => p.id === pieceId);
         
-        if (isBackDo && targetPiece.pos === 0) return alert("대기 중인 말은 빽도로 이동할 수 없습니다.");
-
         const startPos = targetPiece.pos;
         const groupedPiecesIds = startPos > 0 ? myPieces.filter(p => p.pos === startPos).map(p => p.id) : [pieceId];
 
@@ -1476,7 +1446,7 @@
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), updateData);
         setSelectedPiece(null);
         setPreviewPos([]);
-        setPendingMove(null); // 로컬룰 이동 보류 해제
+        setPendingMove(null);
 
         if (!isWin) await checkTurnEnd(newChances, newQueue); 
       };
@@ -1631,7 +1601,6 @@
           {/* Left Area: Game Board & Controls */}
           <div className="w-full lg:flex-1 h-[100dvh] lg:h-full flex flex-col p-2 sm:p-4 md:p-6 relative flex-shrink-0">
             
-            {/* Header */}
             <div className="flex justify-between items-center mb-2 md:mb-4 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-200 flex-shrink-0">
               <div>
                 <div className="flex items-center gap-2">
@@ -1658,10 +1627,7 @@
               </button>
             </div>
 
-            {/* Board Container */}
             <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
-               
-               {/* 로컬룰용 목적지 선택 안내 메시지 (갈림길일 경우) */}
                {pendingMove && (
                   <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-4 md:px-6 py-2 rounded-full font-bold shadow-lg z-50 animate-bounce flex items-center text-xs md:text-sm whitespace-nowrap">
                      갈림길입니다! 반짝이는 위치를 클릭하세요.
@@ -1683,7 +1649,6 @@
                   </div>
                </div>
 
-               {/* 윷판 영역 */}
                <div className="flex-1 w-full flex items-center justify-center min-h-0 relative mt-4 md:mt-0">
                  <div className="relative w-full aspect-square max-w-[300px] sm:max-w-[400px] md:max-w-[450px] max-h-[300px] sm:max-h-[400px] md:max-h-[450px] mx-auto flex-shrink-0">
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -1721,7 +1686,6 @@
                </div>
             </div>
 
-            {/* Bottom Controls */}
             <div className="bg-white mt-2 md:mt-4 rounded-xl md:rounded-3xl shadow-sm border border-gray-200 p-2 sm:p-4 md:p-6 flex flex-row gap-2 md:gap-8 flex-shrink-0">
               <div className="flex flex-col justify-center border-r border-gray-200 pr-2 md:pr-8 w-1/3 sm:w-auto">
                 <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2 text-[10px] md:text-sm">
@@ -1763,7 +1727,6 @@
                   {roomData.yutQueue.map((yutKey, idx) => {
                     const res = YUT_RESULTS[yutKey];
 
-                    // 🎯 목적지 미리보기 이벤트 (Hover & Touch)
                     const handlePreviewOn = () => {
                       if (!isSpectator && selectedPiece && !pendingMove) {
                         const targetPiece = roomData.pieces[playingTeam].find(p => p.id === selectedPiece.id);
@@ -1783,7 +1746,6 @@
                                if (dests.length === 1) {
                                    executeMove(piece.id, dests[0], yutKey, idx);
                                } else {
-                                   // 로컬룰 갈림길 발생 시 상태 저장
                                    setPendingMove({ pieceId: piece.id, yutKey: yutKey, queueIndex: idx, dests: dests });
                                }
                            }
@@ -1807,7 +1769,7 @@
             </div>
           </div>
 
-          {/* Right Sidebar: Chat & Logs */}
+          {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
           <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
             <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
                <span className="font-black text-gray-800 text-lg">방향 채팅방</span>
@@ -1815,18 +1777,11 @@
             </div>
             
             <div className="flex-1 lg:h-1/3 min-h-0 lg:min-h-[200px] border-b border-gray-200 flex flex-col bg-gray-50 flex-shrink-0">
-              <div className="p-3 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2 flex-shrink-0">방 참가자</div>
-              <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 custom-scrollbar">
-                {roomData.players.map(p => (
-                  <div key={p.uid} className="flex items-center gap-2 text-xs md:text-sm font-medium text-gray-700 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                    <div className={`w-2 h-2 rounded-full ${p.team==='A' ? 'bg-blue-500':'bg-red-500'} flex-shrink-0`}></div>
-                    <span className="truncate flex-1">{p.name}</span>
-                  </div>
-                ))}
-                {roomData.spectators?.map(p => (
-                  <div key={p.uid} className="flex items-center gap-2 text-xs md:text-sm font-medium text-gray-400 p-2 bg-gray-50 rounded-lg border border-gray-100 shadow-sm">
-                    <div className="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"></div>
-                    <span className="truncate flex-1">{p.name} (관전)</span>
+              <div className="p-3 md:p-4 font-bold text-gray-700 border-b border-gray-200 text-sm flex items-center gap-2 flex-shrink-0">방 기록</div>
+              <div className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 flex flex-col-reverse custom-scrollbar">
+                {[...roomData.logs].reverse().map((log, idx) => (
+                  <div key={idx} className="text-xs md:text-sm text-gray-600 bg-white p-2 md:p-3 rounded-lg shadow-sm border border-gray-100 font-medium leading-relaxed">
+                    {log}
                   </div>
                 ))}
               </div>
