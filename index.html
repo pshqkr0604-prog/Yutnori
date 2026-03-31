@@ -114,7 +114,7 @@
     const db = getFirestore(app);
     
     // 데이터베이스 방 목록 저장 폴더명
-    const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
+    const GLOBAL_APP_ID = 'yutnori_live_match_final_v4'; // 캐시 꼬임 방지를 위해 v4 변경
 
     // --- Yut Board Logic ---
     const BOARD_POSITIONS = {
@@ -202,8 +202,11 @@
                     nextNodes = [24]; // 우측 상단에서 내려오던 중이면 -> 좌측 하단(24) 직진
                 } else if (prevNode === 27) {
                     nextNodes = [28]; // 좌측 상단에서 내려오던 중이면 -> 출구(28) 직진
+                } else if (prevNode === 24 || prevNode === 28) {
+                    // 빽도로 인해 역주행 중인 경우의 방어코드
+                    nextNodes = prevNode === 24 ? [22] : [27];
                 } else {
-                    nextNodes = [28]; // 예외 처리
+                    nextNodes = [28]; // 예외 처리 시 기본값
                 }
             }
           }
@@ -402,7 +405,6 @@
       const [activeEmoticon, setActiveEmoticon] = useState(null);
       const lastEmoticonEventId = useRef(null);
       
-      // 사용자 인증 상태 추적
       useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           if (currentUser) {
@@ -423,7 +425,6 @@
         return () => unsubscribe();
       }, []);
 
-      // 이모티콘 팝업 표시 감지
       useEffect(() => {
         if (roomData?.emoticonEvent && roomData.emoticonEvent.id !== lastEmoticonEventId.current) {
           lastEmoticonEventId.current = roomData.emoticonEvent.id;
@@ -432,7 +433,6 @@
         }
       }, [roomData?.emoticonEvent]);
 
-      // 사용자 접속 상태 갱신 (30초마다)
       useEffect(() => {
         if (!user || !db || !playerName) return;
         const userRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_users', user.uid);
@@ -448,7 +448,6 @@
         return () => clearInterval(intervalId);
       }, [user, db, playerName]);
 
-      // 사용자 전적(승률) 불러오기
       useEffect(() => {
         if (!user || !db) return;
         const userRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_users', user.uid);
@@ -458,7 +457,7 @@
         return () => unsubscribe();
       }, [user]);
 
-      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
+      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리 (버그 완벽 수정)
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -504,7 +503,6 @@
         return () => unsubscribe();
       }, [user, activeRoomId, db]);
 
-      // 방 만들기
       const createRoom = async (isPrivate, roomPassword, roomRule) => {
         if (!user) return;
         try {
@@ -1032,7 +1030,7 @@
     }
 
     // ==========================================
-    // Character Select View 
+    // Character Select View
     // ==========================================
     function CharacterSelectView({ roomData, roomId, user, db, appId, onLeave }) {
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
@@ -1315,9 +1313,10 @@
       const timeoutSecondsLeft = Math.max(0, 60 - Math.floor((now - (roomData?.lastActionTime || now)) / 1000));
       const isOpponentTimeout = !isMyTurn && !isSpectator && roomData?.lastActionTime && (now - roomData.lastActionTime > 60000);
 
-      const checkTurnEnd = async (currentChances, currentQueue) => {
+      // 동기화 버그 방지를 위해 항상 최신 roomData를 받아서 처리하도록 수정
+      const checkTurnEnd = async (currentChances, currentQueue, currentRoomObj) => {
         if (currentChances <= 0 && currentQueue.length === 0) {
-          const nextTurn = roomData.turn === 'A' ? 'B' : 'A';
+          const nextTurn = currentRoomObj.turn === 'A' ? 'B' : 'A';
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
             turn: nextTurn, throwChances: 1, logs: arrayUnion(`[턴 종료] ${nextTurn === 'A' ? '팀 A' : '팀 B'}의 차례입니다.`),
             lastActionTime: Date.now() 
@@ -1345,34 +1344,52 @@
           lastActionTime: Date.now() 
         });
         
+        // 윷 결과 증발을 막기 위해 내부에서 getDoc으로 최신 상태 확인
         setTimeout(async () => {
+          const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId));
+          if (!snap.exists()) return;
+          const currentRoom = snap.data();
+          
           const result = YUT_RESULTS[resultKey];
-          const onBoardPieces = activePieces.filter(p => p.pos > 0 && p.pos < 30);
-          let newChances = roomData.throwChances - 1; 
+          const currActivePieces = currentRoom.pieces[playingTeam].filter(p => p.pos !== 30);
+          const onBoardPieces = currActivePieces.filter(p => p.pos > 0 && p.pos < 30);
+          let newChances = currentRoom.throwChances - 1; 
           if (resultKey === '4' || resultKey === '5') newChances += 1;
 
           if (resultKey === '-1' && onBoardPieces.length === 0) {
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-              throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 빽도! (판에 말이 없어 이동 불가)`),
+              throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] 빽도! (판에 말이 없어 이동 불가)`),
               lastActionTime: Date.now()
             });
-            await checkTurnEnd(newChances, roomData.yutQueue); 
+            await checkTurnEnd(newChances, currentRoom.yutQueue || [], currentRoom); 
             return;
           }
 
-          const newQueue = [...roomData.yutQueue, resultKey];
+          const newQueue = [...(currentRoom.yutQueue || []), resultKey];
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-            yutQueue: newQueue, throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`),
+            yutQueue: newQueue, throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`),
             lastActionTime: Date.now()
           });
-          await checkTurnEnd(newChances, newQueue);
+          await checkTurnEnd(newChances, newQueue, currentRoom);
         }, 1200); 
       };
 
       const executeMove = async (pieceId, targetDestPos, yutKey, queueIndex) => {
+        // 동기화 버그 방지를 위해 항상 최신 큐를 서버에서 조회
+        const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId));
+        if (!snap.exists()) return;
+        const currentRoom = snap.data();
+
+        const actualQueue = currentRoom.yutQueue || [];
+        const removeIdx = actualQueue.indexOf(yutKey); // 정확한 키값을 찾아 삭제 (인덱스 밀림 방지)
+        if (removeIdx === -1) return; 
+
+        const newQueue = [...actualQueue];
+        newQueue.splice(removeIdx, 1);
+
         const steps = YUT_RESULTS[yutKey].steps;
         const isBackDo = steps === -1;
-        const myPieces = [...roomData.pieces[playingTeam]];
+        const myPieces = [...currentRoom.pieces[playingTeam]];
         const targetPiece = myPieces.find(p => p.id === pieceId);
         
         if (isBackDo && targetPiece.pos === 0) return alert("대기 중인 말은 빽도로 이동할 수 없습니다.");
@@ -1388,7 +1405,7 @@
 
         let extraTurnFromCatch = false;
         const oppPlayingTeam = playingTeam === 'A' ? 'B' : 'A';
-        let updatedOppPieces = [...roomData.pieces[oppPlayingTeam]];
+        let updatedOppPieces = [...currentRoom.pieces[oppPlayingTeam]];
 
         if (destPos > 0 && destPos < 30) {
           const caughtPieces = updatedOppPieces.filter(p => p.pos === destPos);
@@ -1404,10 +1421,7 @@
         if (extraTurnFromCatch) SoundFX.catch();
         else SoundFX.move();
 
-        const newQueue = [...roomData.yutQueue];
-        newQueue.splice(queueIndex, 1);
-
-        let newChances = roomData.throwChances;
+        let newChances = currentRoom.throwChances;
         let turnMsg = "";
         
         if (extraTurnFromCatch) {
@@ -1420,7 +1434,7 @@
         
         const updateData = {
           pieces: piecesUpdate, yutQueue: newQueue, throwChances: newChances,
-          logs: arrayUnion(`[${CHARACTERS[roomData.characters[playingTeam]].name}] 말이 이동했습니다. ${turnMsg}`),
+          logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] 말이 이동했습니다. ${turnMsg}`),
           lastActionTime: Date.now() 
         };
 
@@ -1430,10 +1444,10 @@
           updateData.winnerTeam = playingTeam;
           updateData.logs = arrayUnion(`🎉 ${playingTeam === 'A' ? '팀 A' : '팀 B'}가 승리했습니다! 게임 종료.`);
 
-          const winners = roomData.players.filter(p => p.team === playingTeam && !p.isBot);
-          const losers = roomData.players.filter(p => p.team !== playingTeam && p.team !== 'spectator' && !p.isBot);
+          const winners = currentRoom.players.filter(p => p.team === playingTeam && !p.isBot);
+          const losers = currentRoom.players.filter(p => p.team !== playingTeam && p.team !== 'spectator' && !p.isBot);
 
-          roomData.players.forEach(async (p) => {
+          currentRoom.players.forEach(async (p) => {
              if (p.isBot || p.team === 'spectator') return;
              const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_users', p.uid);
              const isWinner = p.team === playingTeam;
@@ -1471,7 +1485,7 @@
         setPreviewPos([]);
         setPendingMove(null);
 
-        if (!isWin) await checkTurnEnd(newChances, newQueue); 
+        if (!isWin) await checkTurnEnd(newChances, newQueue, currentRoom); 
       };
 
       const claimVictoryByTimeout = async () => {
@@ -1546,7 +1560,18 @@
 
           return (
             <div key={`piece-${p.team}-${teamPiecesHere[0].id}`} 
-              onClick={() => !isSpectator && isMyTurn && p.team === playingTeam && handlePieceClick(p.team, teamPiecesHere[0].id)}
+              onClick={(e) => {
+                // 클릭한 말의 위치가 현재 보류 중인 이동 목적지에 포함될 경우 -> 말 잡기/업기 실행! (오류 픽스)
+                if (pendingMove && pendingMove.dests.includes(p.pos)) {
+                  e.stopPropagation();
+                  executeMove(pendingMove.pieceId, p.pos, pendingMove.yutKey, pendingMove.queueIndex);
+                  return;
+                }
+                // 아닐 경우 정상적인 말 선택
+                if (!isSpectator && isMyTurn && !isRolling && p.team === playingTeam) {
+                  handlePieceClick(p.team, teamPiecesHere[0].id);
+                }
+              }}
               className={`absolute flex items-center justify-center cursor-pointer transition-all duration-500 ease-in-out z-10 transform -translate-x-1/2 -translate-y-[70%]
                 ${isSelected ? 'scale-110 md:scale-125 z-30' : 'hover:scale-110 z-20'}
               `}
@@ -1717,8 +1742,8 @@
                 </h3>
                 <div className="flex flex-wrap gap-1 md:gap-4 justify-start">
                   {roomData.pieces[playingTeam].map(p => (
-                    <div key={p.id} onClick={() => !isSpectator && p.pos === 0 && handlePieceClick(playingTeam, p.id)}
-                      className={`relative ${!isSpectator ? 'cursor-pointer' : ''} transition-transform w-6 h-10 sm:w-8 sm:h-12 md:w-12 md:h-16 flex items-end justify-center
+                    <div key={p.id} onClick={() => !isSpectator && !isRolling && p.pos === 0 && handlePieceClick(playingTeam, p.id)}
+                      className={`relative ${!isSpectator && !isRolling ? 'cursor-pointer' : ''} transition-transform w-6 h-10 sm:w-8 sm:h-12 md:w-12 md:h-16 flex items-end justify-center
                         ${p.pos > 0 ? 'opacity-30 grayscale cursor-not-allowed' : (!isSpectator ? 'hover:-translate-y-1 md:hover:-translate-y-2' : '')}
                         ${selectedPiece?.id === p.id ? 'scale-110 drop-shadow-xl' : ''}
                       `}
@@ -1775,9 +1800,9 @@
                         }} 
                         onMouseEnter={handlePreviewOn} onMouseLeave={handlePreviewOff}
                         onTouchStart={handlePreviewOn} onTouchEnd={handlePreviewOff}
-                        disabled={!selectedPiece || isSpectator}
+                        disabled={!selectedPiece || isSpectator || isRolling}
                         className={`flex flex-col items-center justify-center min-w-[40px] h-9 sm:min-w-[50px] sm:h-10 md:min-w-[70px] md:h-14 rounded md:rounded-lg font-black shadow-sm transition-all border-b-2 md:border-b-4 flex-shrink-0 
-                          ${selectedPiece && !isSpectator
+                          ${selectedPiece && !isSpectator && !isRolling
                           ? 'bg-blue-500 hover:bg-blue-400 text-white border-blue-700 active:border-b-0 active:translate-y-1 cursor-pointer animate-pulse' 
                           : 'bg-gray-200 text-gray-500 border-gray-300'}
                         `}
