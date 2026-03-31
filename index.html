@@ -117,15 +117,6 @@
     const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
 
     // --- Yut Board Logic ---
-    const BOARD_GRAPH = {
-      1: [2], 2: [3], 3: [4], 4: [5], 5: [6, 21],
-      6: [7], 7: [8], 8: [9], 9: [10], 10: [11, 26],
-      11: [12], 12: [13], 13: [14], 14: [15], 15: [16],
-      16: [17], 17: [18], 18: [19], 19: [20], 20: [30],
-      21: [22], 22: [23], 23: [24, 28], 24: [25], 25: [15],
-      26: [27], 27: [23], 28: [29], 29: [20],
-    };
-
     const BOARD_POSITIONS = {
       1: { x: 100, y: 80 }, 2: { x: 100, y: 60 }, 3: { x: 100, y: 40 }, 4: { x: 100, y: 20 }, 5: { x: 100, y: 0 },
       6: { x: 80, y: 0 }, 7: { x: 60, y: 0 }, 8: { x: 40, y: 0 }, 9: { x: 20, y: 0 }, 10: { x: 0, y: 0 },
@@ -150,51 +141,86 @@
       '손권': { hanja: '孫', name: '손권', bgDark: '#7f1d1d', bgLight: '#ef4444' }
     };
 
-    // 빽도 전용 경로 계산
-    const getBackDoPos = (p) => {
-        if (p === 0 || p === 30) return [];
-        if (p === 21) return [5];
-        if (p === 22) return [21];
-        if (p === 23) return [22, 27];
-        if (p === 24) return [23];
-        if (p === 25) return [24];
-        if (p === 26) return [10];
-        if (p === 27) return [26];
-        if (p === 28) return [23];
-        if (p === 29) return [28];
-        if (p === 20) return [19, 29];
-        if (p === 15) return [14, 25];
-        return [p - 1];
-    }
-
-    // 룰(전통/로컬)에 맞춘 다중 도착지 계산 로직
+    // ---------------------------------------------------------------------------------
+    // [경로 오류 완벽 수정] 전통룰/로컬룰 및 다중 목적지 자동 계산 로직
+    // ---------------------------------------------------------------------------------
     const getDestinations = (startPos, steps, rule) => {
-        if (steps === -1) return getBackDoPos(startPos);
-        let paths = [startPos];
-        let currentSteps = steps;
-        if (paths[0] === 0) { paths = [1]; currentSteps--; }
-
-        for(let i=0; i<currentSteps; i++) {
-            let nextPaths = [];
-            for(let curr of paths) {
-                if (curr === 30) { nextPaths.push(30); continue; }
-                let nodes = BOARD_GRAPH[curr];
-                if (!nodes) { nextPaths.push(curr); continue; }
-
-                if (i === 0 && nodes.length > 1) {
-                    if (rule === 'local') {
-                        nextPaths.push(nodes[0]);
-                        nextPaths.push(nodes[1]);
-                    } else {
-                        nextPaths.push(nodes[1]);
-                    }
+      if (steps === -1) { // 빽도 처리
+        if (startPos === 0 || startPos === 30) return [];
+        if (startPos === 21) return rule === 'local' ? [5] : [5]; 
+        if (startPos === 22) return [21];
+        if (startPos === 23) return [22, 27];
+        if (startPos === 24) return [23];
+        if (startPos === 25) return [24];
+        if (startPos === 26) return [10];
+        if (startPos === 27) return [26];
+        if (startPos === 28) return [23];
+        if (startPos === 29) return [28];
+        if (startPos === 20) return [19, 29];
+        if (startPos === 15) return [14, 25];
+        if (startPos === 1) return [0];
+        return [startPos - 1];
+      }
+      
+      let paths = [[startPos]];
+      
+      for(let i=0; i<steps; i++) {
+        let nextPaths = [];
+        for(let path of paths) {
+          let curr = path[path.length - 1];
+          if (curr === 30) { nextPaths.push([...path, 30]); continue; }
+          
+          let nextNodes = [];
+          if (curr === 5) { // 우측 상단 모서리
+            if (i === 0) {
+               if (rule === 'local') nextNodes = [6, 21]; // 로컬: 모서리 출발 시 직진/대각선 선택 가능
+               else nextNodes = [21]; // 전통: 모서리 출발 시 강제 지름길
+            } else {
+               nextNodes = [6]; // 거쳐가는 경우 무조건 직진
+            }
+          }
+          else if (curr === 10) { // 좌측 상단 모서리
+            if (i === 0) {
+               if (rule === 'local') nextNodes = [11, 26]; // 로컬: 모서리 출발 시 직진/대각선 선택 가능
+               else nextNodes = [26]; // 전통: 모서리 출발 시 강제 지름길
+            } else {
+               nextNodes = [11]; // 거쳐가는 경우 무조건 직진
+            }
+          }
+          else if (curr === 23) { // 정중앙 교차점
+            if (i === 0) {
+                // 딱 교차점에서 출발하는 경우: 무조건 출구 방향으로 강제
+                nextNodes = [28];
+            } else {
+                // 교차점을 '거쳐가는' 경우: 이전 궤적을 확인하여 그대로 직진 유지 (꺾임 버그 완벽 해결)
+                let prevNode = path[path.length - 2];
+                if (prevNode === 22) {
+                    nextNodes = [24]; // 우측 상단에서 내려오던 중이면 -> 좌측 하단(24) 직진
+                } else if (prevNode === 27) {
+                    nextNodes = [28]; // 좌측 상단에서 내려오던 중이면 -> 출구(28) 직진
                 } else {
-                    nextPaths.push(nodes[0]);
+                    nextNodes = [28]; // 예외 처리
                 }
             }
-            paths = nextPaths;
+          }
+          else if (curr === 20) { nextNodes = [30]; } // 출구
+          else if (curr === 25) { nextNodes = [15]; } 
+          else if (curr === 15) { nextNodes = [16]; } // 좌측 하단은 빙 돌아가는 길로 합류
+          else if (curr === 29) { nextNodes = [20]; }
+          else {
+            if (curr < 20) nextNodes = [curr + 1];
+            else if (curr >= 21 && curr <= 24) nextNodes = [curr + 1];
+            else if (curr >= 26 && curr <= 28) nextNodes = [curr + 1];
+          }
+
+          for (let n of nextNodes) {
+            nextPaths.push([...path, n]);
+          }
         }
-        return [...new Set(paths)];
+        paths = nextPaths;
+      }
+      
+      return [...new Set(paths.map(p => p[p.length - 1]))];
     };
 
     // ==========================================
@@ -372,7 +398,7 @@
       const [activeEmoticon, setActiveEmoticon] = useState(null);
       const lastEmoticonEventId = useRef(null);
       
-      // 사용자 인증 및 자동 재접속 (Auto-reconnect)
+      // 사용자 인증 상태 추적
       useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           if (currentUser) {
@@ -428,7 +454,7 @@
         return () => unsubscribe();
       }, [user]);
 
-      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
+      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리 (버그 완벽 수정)
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -436,14 +462,14 @@
           const fetchedRooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished');
           setRooms(fetchedRooms);
 
-          // 로그인 후 로비에 있을 때, 내가 참여중인 방이 있으면 즉시 자동 재접속
-          setActiveRoomId(prevId => {
-             if (!prevId) {
-                const myRoom = fetchedRooms.find(r => r.players.some(p => p.uid === user.uid) || r.spectators?.some(p => p.uid === user.uid));
-                if (myRoom) return myRoom.id;
-             }
-             return prevId;
-          });
+          // 로그인 직후 로비에 있을 때 자동 재접속 동기화 강화
+          const myRoom = fetchedRooms.find(r => r.players.some(p => p.uid === user.uid) || r.spectators?.some(p => p.uid === user.uid));
+          if (myRoom) {
+             setActiveRoomId(prevId => {
+                if (prevId !== myRoom.id) return myRoom.id;
+                return prevId;
+             });
+          }
         }, (error) => {
           console.error(error);
           setAuthError("방 목록을 불러올 수 없습니다.");
@@ -451,7 +477,7 @@
         return () => unsubscribe();
       }, [user, db]);
 
-      // 특정 방 구독 및 뷰(View) 상태 동기화
+      // 특정 방 구독 및 뷰(View) 상태 동기화 (단일 진실의 원천)
       useEffect(() => {
         if (!user || !db || !activeRoomId) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -486,7 +512,7 @@
             status: 'lobby',
             isPrivate: isPrivate,
             password: isPrivate ? roomPassword : null,
-            rule: roomRule || 'traditional', // 룰 저장
+            rule: roomRule || 'traditional', // 전통룰/로컬룰 설정 적용
             players: [{ uid: user.uid, name: playerName, team: 'A' }],
             spectators: [], 
             turn: 'A',
@@ -552,7 +578,6 @@
         }
       };
 
-      // 방 나가기 및 자동 폭파/기권 처리 완벽 로직
       const leaveRoom = async () => {
         if (!user || !activeRoomId || !roomData) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -560,7 +585,6 @@
         const myPlayerInfo = roomData.players.find(p => p.uid === user.uid);
         const isSpectator = roomData.spectators?.some(p => p.uid === user.uid);
 
-        // 1. 관전자인 경우 조용히 나감
         if (isSpectator) {
            const updatedSpectators = roomData.spectators.filter(p => p.uid !== user.uid);
            await updateDoc(roomRef, {
@@ -572,7 +596,6 @@
            return;
         }
 
-        // 2. 게임 종료 상태에서 나가면 방을 완전 삭제(클린업)
         if (roomData.status === 'finished') {
            await deleteDoc(roomRef);
            setActiveRoomId(null);
@@ -580,7 +603,6 @@
            return;
         }
 
-        // 3. 게임 도중(진행중, 캐릭터선택, 선후공 결정 등) 나가는 경우 (기권 패배 처리)
         if (roomData.status !== 'lobby') {
           if (confirm("방을 나가면 기권으로 패배 처리됩니다.\n정말 나가시겠습니까?")) {
             const playingTeam = myPlayerInfo.team;
@@ -616,14 +638,12 @@
               winnerTeam: oppTeam, 
               logs: arrayUnion(`🚨 ${myPlayerInfo.name}님이 기권했습니다. ${oppTeam}팀 승리!`) 
             });
-            // 나가기를 눌러 상태가 finished가 되었으므로 즉시 리턴하고 승패 화면을 띄움
             return;
           } else {
             return;
           }
         }
 
-        // 4. 로비 상태에서 정상 퇴장
         const updatedPlayers = roomData.players.filter(p => p.uid !== user.uid);
         if (updatedPlayers.length === 0) {
           await deleteDoc(roomRef);
@@ -808,7 +828,6 @@
                   const isMyGame = user && room.players.some(p => p.uid === user.uid);
                   const isSpectator = user && room.spectators?.some(p => p.uid === user.uid);
                   const isHost = user && room.hostId === user.uid;
-                  // 유령 방 처리: 5분 이상 액션이 없으면 누구나 지울 수 있음
                   const isGhostRoom = room.lastActionTime && (Date.now() - room.lastActionTime > 300000); 
 
                   let btnText = '참가하기';
@@ -901,10 +920,6 @@
               </form>
             </div>
           </div>
-          
-          <button onClick={() => setIsMobileChatOpen(true)} className="lg:hidden fixed bottom-6 right-6 z-[60] bg-amber-600 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center active:scale-95 transition-transform">
-            <MessageSquare size={28} />
-          </button>
         </div>
       );
     }
@@ -1350,13 +1365,22 @@
         }, 1200); 
       };
 
-      const executeMove = async (pieceId, destPos, yutKey, queueIndex) => {
+      // ----------------------------------------------------
+      // 변경된 executeMove 파라미터: destPos를 바로 받아서 처리
+      // ----------------------------------------------------
+      const executeMove = async (pieceId, targetDestPos, yutKey, queueIndex) => {
         const steps = YUT_RESULTS[yutKey].steps;
+        const isBackDo = steps === -1;
         const myPieces = [...roomData.pieces[playingTeam]];
         const targetPiece = myPieces.find(p => p.id === pieceId);
         
+        if (isBackDo && targetPiece.pos === 0) return alert("대기 중인 말은 빽도로 이동할 수 없습니다.");
+
         const startPos = targetPiece.pos;
         const groupedPiecesIds = startPos > 0 ? myPieces.filter(p => p.pos === startPos).map(p => p.id) : [pieceId];
+        
+        // 새로 전달받은 도착지 반영
+        const destPos = targetDestPos;
 
         const updatedMyPieces = myPieces.map(p => {
           if (groupedPiecesIds.includes(p.id)) return { ...p, pos: destPos };
@@ -1598,9 +1622,10 @@
             </div>
           )}
 
-          {/* Left Area: Game Board & Controls */}
+          {/* Left Area: Game Board & Controls (모바일에서는 무조건 100dvh 핏) */}
           <div className="w-full lg:flex-1 h-[100dvh] lg:h-full flex flex-col p-2 sm:p-4 md:p-6 relative flex-shrink-0">
             
+            {/* Header */}
             <div className="flex justify-between items-center mb-2 md:mb-4 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-200 flex-shrink-0">
               <div>
                 <div className="flex items-center gap-2">
@@ -1627,7 +1652,10 @@
               </button>
             </div>
 
+            {/* Board Container */}
             <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
+               
+               {/* 로컬룰용 목적지 선택 안내 메시지 (갈림길일 경우) */}
                {pendingMove && (
                   <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-4 md:px-6 py-2 rounded-full font-bold shadow-lg z-50 animate-bounce flex items-center text-xs md:text-sm whitespace-nowrap">
                      갈림길입니다! 반짝이는 위치를 클릭하세요.
@@ -1649,6 +1677,7 @@
                   </div>
                </div>
 
+               {/* 실제 윷판 영역 */}
                <div className="flex-1 w-full flex items-center justify-center min-h-0 relative mt-4 md:mt-0">
                  <div className="relative w-full aspect-square max-w-[300px] sm:max-w-[400px] md:max-w-[450px] max-h-[300px] sm:max-h-[400px] md:max-h-[450px] mx-auto flex-shrink-0">
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -1686,7 +1715,9 @@
                </div>
             </div>
 
+            {/* Bottom Controls */}
             <div className="bg-white mt-2 md:mt-4 rounded-xl md:rounded-3xl shadow-sm border border-gray-200 p-2 sm:p-4 md:p-6 flex flex-row gap-2 md:gap-8 flex-shrink-0">
+              {/* 내 대기 말 영역 */}
               <div className="flex flex-col justify-center border-r border-gray-200 pr-2 md:pr-8 w-1/3 sm:w-auto">
                 <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2 text-[10px] md:text-sm">
                   {isSpectator ? `[${myTeam}팀] 대기 말` : '내 대기 말'}
@@ -1708,6 +1739,7 @@
                 </div>
               </div>
 
+              {/* 액션 컨트롤 영역 */}
               <div className="flex-1 flex flex-col justify-center min-w-0">
                 {isOpponentTimeout ? (
                   <button onClick={claimVictoryByTimeout} 
@@ -1769,7 +1801,10 @@
             </div>
           </div>
 
+          {/* Mobile Overlay Background */}
           {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
+
+          {/* Right Sidebar (Desktop Fixed Right, Mobile Slide-up Overlay) */}
           <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
             <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
                <span className="font-black text-gray-800 text-lg">방향 채팅방</span>
