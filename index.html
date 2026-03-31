@@ -113,8 +113,8 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // 데이터베이스 방 목록 저장 폴더명
-    const GLOBAL_APP_ID = 'yutnori_live_match_final_v4'; // 캐시 꼬임 방지를 위해 v4 변경
+    // 데이터베이스 방 목록 저장 폴더명 (기존 전적 유지를 위해 다시 v3로 복구)
+    const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
 
     // --- Yut Board Logic ---
     const BOARD_POSITIONS = {
@@ -457,7 +457,7 @@
         return () => unsubscribe();
       }, [user]);
 
-      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리 (버그 완벽 수정)
+      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -465,7 +465,6 @@
           const fetchedRooms = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(r => r.status !== 'finished');
           setRooms(fetchedRooms);
 
-          // 로그인 직후 로비에 있을 때 자동 재접속 동기화 강화
           const myRoom = fetchedRooms.find(r => r.players.some(p => p.uid === user.uid) || r.spectators?.some(p => p.uid === user.uid));
           if (myRoom) {
              setActiveRoomId(prevId => {
@@ -480,7 +479,7 @@
         return () => unsubscribe();
       }, [user, db]);
 
-      // 특정 방 구독 및 뷰(View) 상태 동기화 (단일 진실의 원천)
+      // 특정 방 구독 및 뷰(View) 상태 동기화
       useEffect(() => {
         if (!user || !db || !activeRoomId) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -514,7 +513,7 @@
             status: 'lobby',
             isPrivate: isPrivate,
             password: isPrivate ? roomPassword : null,
-            rule: roomRule || 'traditional', // 전통룰/로컬룰 설정 적용
+            rule: roomRule || 'traditional',
             players: [{ uid: user.uid, name: playerName, team: 'A' }],
             spectators: [], 
             turn: 'A',
@@ -1646,15 +1645,13 @@
             </div>
           )}
 
-          {/* Left Area: Game Board & Controls */}
+          {/* Left Area: Game Board & Controls (모바일에서는 무조건 100dvh 핏) */}
           <div className="w-full lg:flex-1 h-[100dvh] lg:h-full flex flex-col p-2 sm:p-4 md:p-6 relative flex-shrink-0">
             
+            {/* Header */}
             <div className="flex justify-between items-center mb-2 md:mb-4 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-200 flex-shrink-0">
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-sm md:text-xl font-black text-gray-800 truncate max-w-[150px] sm:max-w-[300px]">{roomData.name}</h2>
-                  <span className="text-[9px] text-gray-400 border border-gray-200 px-1 rounded h-fit flex-shrink-0">{roomData.rule === 'local' ? '로컬룰' : '전통룰'}</span>
-                </div>
+                <h2 className="text-sm md:text-xl font-black text-gray-800 truncate max-w-[150px] sm:max-w-[300px]">{roomData.name}</h2>
                 <div className="text-[10px] md:text-sm font-bold flex items-center gap-1.5 md:gap-3 mt-1">
                   <span className="text-gray-500 hidden sm:inline">상태:</span>
                   {roomData.status === 'finished' ? (
@@ -1675,7 +1672,10 @@
               </button>
             </div>
 
+            {/* Board Container */}
             <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
+               
+               {/* 로컬룰용 목적지 선택 안내 메시지 (갈림길일 경우) */}
                {pendingMove && (
                   <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-4 md:px-6 py-2 rounded-full font-bold shadow-lg z-50 animate-bounce flex items-center text-xs md:text-sm whitespace-nowrap">
                      갈림길입니다! 반짝이는 위치를 클릭하세요.
@@ -1697,6 +1697,7 @@
                   </div>
                </div>
 
+               {/* 실제 윷판 영역 */}
                <div className="flex-1 w-full flex items-center justify-center min-h-0 relative mt-4 md:mt-0">
                  <div className="relative w-full aspect-square max-w-[300px] sm:max-w-[400px] md:max-w-[450px] max-h-[300px] sm:max-h-[400px] md:max-h-[450px] mx-auto flex-shrink-0">
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -1734,7 +1735,9 @@
                </div>
             </div>
 
+            {/* Bottom Controls */}
             <div className="bg-white mt-2 md:mt-4 rounded-xl md:rounded-3xl shadow-sm border border-gray-200 p-2 sm:p-4 md:p-6 flex flex-row gap-2 md:gap-8 flex-shrink-0">
+              {/* 내 대기 말 영역 */}
               <div className="flex flex-col justify-center border-r border-gray-200 pr-2 md:pr-8 w-1/3 sm:w-auto">
                 <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2 text-[10px] md:text-sm">
                   {isSpectator ? `[${myTeam}팀] 대기 말` : '내 대기 말'}
@@ -1756,6 +1759,7 @@
                 </div>
               </div>
 
+              {/* 액션 컨트롤 영역 */}
               <div className="flex-1 flex flex-col justify-center min-w-0">
                 {isOpponentTimeout ? (
                   <button onClick={claimVictoryByTimeout} 
@@ -1775,6 +1779,7 @@
                   {roomData.yutQueue.map((yutKey, idx) => {
                     const res = YUT_RESULTS[yutKey];
 
+                    // 🎯 목적지 미리보기 이벤트 (Hover & Touch)
                     const handlePreviewOn = () => {
                       if (!isSpectator && selectedPiece && !pendingMove) {
                         const targetPiece = roomData.pieces[playingTeam].find(p => p.id === selectedPiece.id);
@@ -1794,6 +1799,7 @@
                                if (dests.length === 1) {
                                    executeMove(piece.id, dests[0], yutKey, idx);
                                } else {
+                                   // 로컬룰 갈림길 발생 시 상태 저장
                                    setPendingMove({ pieceId: piece.id, yutKey: yutKey, queueIndex: idx, dests: dests });
                                }
                            }
@@ -1817,7 +1823,10 @@
             </div>
           </div>
 
+          {/* Mobile Overlay Background */}
           {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
+
+          {/* Right Sidebar (Desktop Fixed Right, Mobile Slide-up Overlay) */}
           <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
             <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
                <span className="font-black text-gray-800 text-lg">방향 채팅방</span>
@@ -1853,6 +1862,7 @@
       const chatContainerRef = useRef(null);
       const isSpectator = myPlayerInfo.team === 'spectator';
 
+      // 강제 스크롤 대신 컨테이너 내부의 scrollTop을 조작하여 화면 밀림 완벽 차단
       useEffect(() => {
         if (chatContainerRef.current) {
           chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -1868,11 +1878,13 @@
         setInput('');
       };
 
+      // 이모티콘(매크로) 즉시 전송 함수
       const sendEmoticon = async (text) => {
         if (!db) return;
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`), {
           text: text, uid: myPlayerInfo.uid, name: myPlayerInfo.name, team: myPlayerInfo.team, mode: chatMode, timestamp: Date.now()
         });
+        // 팝업 애니메이션을 위해 roomData의 emoticonEvent 필드 업데이트
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
           emoticonEvent: { id: Date.now(), text: text, sender: myPlayerInfo.name }
         });
@@ -1918,6 +1930,7 @@
             })}
           </div>
 
+          {/* 빠른 이모티콘(매크로) 영역 추가 */}
           <div className="flex gap-2 overflow-x-auto custom-scrollbar p-2 bg-gray-50 border-t border-gray-200 flex-shrink-0">
             {EMOTICONS.map((emo, idx) => (
               <button key={idx} onClick={() => sendEmoticon(emo)}
