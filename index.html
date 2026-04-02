@@ -113,7 +113,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // 데이터베이스 방 목록 저장 폴더명 
+    // 데이터베이스 방 목록 저장 폴더명 (기존 전적 유지)
     const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
 
     // --- Yut Board Logic ---
@@ -173,48 +173,55 @@
           let nextNodes = [];
           if (curr === 5) { // 우측 상단 모서리
             if (i === 0) {
-               if (rule === 'local') nextNodes = [6, 21]; 
-               else nextNodes = [21]; 
+               if (rule === 'local') nextNodes = [6, 21]; // 로컬: 모서리 출발 시 직진/대각선 선택 가능
+               else nextNodes = [21]; // 전통: 모서리 출발 시 강제 지름길
             } else {
-               nextNodes = [6]; 
+               nextNodes = [6]; // 거쳐가는 경우 무조건 직진
             }
           }
           else if (curr === 10) { // 좌측 상단 모서리
             if (i === 0) {
-               if (rule === 'local') nextNodes = [11, 26]; 
-               else nextNodes = [26]; 
+               if (rule === 'local') nextNodes = [11, 26]; // 로컬: 모서리 출발 시 직진/대각선 선택 가능
+               else nextNodes = [26]; // 전통: 모서리 출발 시 강제 지름길
             } else {
-               nextNodes = [11]; 
+               nextNodes = [11]; // 거쳐가는 경우 무조건 직진
             }
           }
           else if (curr === 23) { // 정중앙 교차점
             if (i === 0) {
+                // 딱 교차점에서 출발하는 경우
                 if (rule === 'local') {
-                    nextNodes = [24, 28]; 
+                    nextNodes = [24, 28]; // 로컬룰: 좌측 하단(24) 또는 출구 방향(28) 선택 가능
                 } else {
-                    nextNodes = [28]; 
+                    nextNodes = [28]; // 전통룰: 무조건 출구 방향으로 강제
                 }
             } else {
+                // 교차점을 '거쳐가는' 경우: 이전 궤적을 확인하여 그대로 직진 유지
                 let prevNode = path[path.length - 2];
                 if (prevNode === 22) {
-                    nextNodes = [24]; 
+                    nextNodes = [24]; // 우측 상단에서 내려오던 중이면 -> 좌측 하단(24) 직진
                 } else if (prevNode === 27) {
-                    nextNodes = [28]; 
+                    nextNodes = [28]; // 좌측 상단에서 내려오던 중이면 -> 출구(28) 직진
                 } else if (prevNode === 24 || prevNode === 28) {
+                    // 빽도로 인해 역주행 중인 경우의 방어코드
                     nextNodes = prevNode === 24 ? [22] : [27];
                 } else {
-                    nextNodes = [28]; 
+                    nextNodes = [28]; // 예외 처리 시 기본값
                 }
             }
           }
-          else if (curr === 20) { nextNodes = [30]; } 
+          else if (curr === 20) { nextNodes = [30]; } // 출구
           else if (curr === 25) { nextNodes = [15]; } 
-          else if (curr === 15) { nextNodes = [16]; } 
+          else if (curr === 15) { nextNodes = [16]; } // 좌측 하단은 빙 돌아가는 길로 합류
           else if (curr === 29) { nextNodes = [20]; }
           else {
             if (curr < 20) nextNodes = [curr + 1];
-            else if (curr >= 21 && curr <= 24) nextNodes = [curr + 1];
-            else if (curr >= 26 && curr <= 28) nextNodes = [curr + 1];
+            else if (curr === 21) nextNodes = [22];
+            else if (curr === 22) nextNodes = [23];
+            else if (curr === 24) nextNodes = [25];
+            else if (curr === 26) nextNodes = [27];
+            else if (curr === 27) nextNodes = [23]; // <-- 대각선 꺾임 버그 완벽 수정 위치
+            else if (curr === 28) nextNodes = [29];
           }
 
           for (let n of nextNodes) {
@@ -228,7 +235,7 @@
     };
 
     // ==========================================
-    // Auth View
+    // Auth View (로그인 / 회원가입)
     // ==========================================
     function AuthView({ auth, setAuthError }) {
       const [isLogin, setIsLogin] = useState(true);
@@ -402,6 +409,7 @@
       const [activeEmoticon, setActiveEmoticon] = useState(null);
       const lastEmoticonEventId = useRef(null);
       
+      // 사용자 인증 상태 추적
       useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           if (currentUser) {
@@ -454,6 +462,7 @@
         return () => unsubscribe();
       }, [user]);
 
+      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -475,6 +484,7 @@
         return () => unsubscribe();
       }, [user, db]);
 
+      // 특정 방 구독 및 뷰(View) 상태 동기화
       useEffect(() => {
         if (!user || !db || !activeRoomId) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -788,7 +798,6 @@
               </div>
             </div>
 
-            {/* 비밀방 및 룰 생성 영역 */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 md:mb-6 gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
               <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2 w-full sm:w-auto"><Play className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /> 게임 방 목록</h2>
               <div className="flex flex-col gap-3 w-full sm:w-auto">
@@ -1252,6 +1261,9 @@
       const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
       
       const [showYutMotion, setShowYutMotion] = useState(true);
+      
+      // 🎯 더블 클릭 증발을 막기 위한 동기화 락 (Lock)
+      const isActionLocked = useRef(false);
 
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
       const isSpectator = myPlayerInfo.team === 'spectator';
@@ -1328,18 +1340,31 @@
       };
 
       const throwYut = async () => {
+        if (isActionLocked.current) return;
         if (!isMyTurn || isRolling) return alert("당신의 차례가 아닙니다.");
         if (roomData.throwChances <= 0) return alert("더 이상 윷을 던질 수 없습니다. 말을 이동하세요.");
-        
-        setIsRolling(true); // 즉각적인 더블클릭 및 씹힘 방지 Lock
 
+        isActionLocked.current = true; // 🎯 증발 방지 락 걸기
+        setIsRolling(true);
+        
         const myPieces = roomData.pieces[playingTeam];
         const activePieces = myPieces.filter(p => p.pos !== 30);
-        if (activePieces.length === 0) return alert("모든 말이 완주했습니다!");
+        if (activePieces.length === 0) {
+           setIsRolling(false);
+           isActionLocked.current = false;
+           return alert("모든 말이 완주했습니다!");
+        }
 
-        const rand = Math.floor(Math.random() * 16);
-        let resultKey = '2';
-        if (rand === 0) resultKey = '-1'; else if (rand <= 3) resultKey = '1'; else if (rand <= 9) resultKey = '2'; else if (rand <= 13) resultKey = '3'; else if (rand === 14) resultKey = '4'; else if (rand === 15) resultKey = '5';
+        // 🎯 윷 확률 고정 (빽도1, 도3, 개6, 걸4, 윷1, 모1)
+        const yutCases = [
+            '-1', 
+            '1', '1', '1', 
+            '2', '2', '2', '2', '2', '2', 
+            '3', '3', '3', '3', 
+            '4', 
+            '5'  
+        ];
+        const resultKey = yutCases[Math.floor(Math.random() * 16)];
         
         const eventId = Date.now();
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
@@ -1351,7 +1376,7 @@
 
         setTimeout(async () => {
           const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId));
-          if (!snap.exists()) return;
+          if (!snap.exists()) { isActionLocked.current = false; return; }
           const currentRoom = snap.data();
           
           const result = YUT_RESULTS[resultKey];
@@ -1373,6 +1398,7 @@
               lastActionTime: Date.now()
             });
             await checkTurnEnd(newChances, currentRoom.yutQueue || [], currentRoom); 
+            isActionLocked.current = false; // 락 해제
             return;
           }
 
@@ -1382,120 +1408,131 @@
             lastActionTime: Date.now()
           });
           await checkTurnEnd(newChances, newQueue, currentRoom);
+          isActionLocked.current = false; // 락 해제
         }, delay); 
       };
 
       const executeMove = async (pieceId, targetDestPos, yutKey, queueIndex) => {
-        const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId));
-        if (!snap.exists()) return;
-        const currentRoom = snap.data();
+        if (isActionLocked.current) return;
+        isActionLocked.current = true; // 🎯 이동 중 증발 방지 락
 
-        const actualQueue = currentRoom.yutQueue || [];
-        const removeIdx = actualQueue.indexOf(yutKey); 
-        if (removeIdx === -1) return; 
+        try {
+            const snap = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId));
+            if (!snap.exists()) return;
+            const currentRoom = snap.data();
 
-        const newQueue = [...actualQueue];
-        newQueue.splice(removeIdx, 1);
+            const actualQueue = currentRoom.yutQueue || [];
+            const removeIdx = actualQueue.indexOf(yutKey); 
+            if (removeIdx === -1) return; 
 
-        const steps = YUT_RESULTS[yutKey].steps;
-        const isBackDo = steps === -1;
-        const myPieces = [...currentRoom.pieces[playingTeam]];
-        const targetPiece = myPieces.find(p => p.id === pieceId);
-        
-        if (isBackDo && targetPiece.pos === 0) return alert("대기 중인 말은 빽도로 이동할 수 없습니다.");
+            const newQueue = [...actualQueue];
+            newQueue.splice(removeIdx, 1);
 
-        const startPos = targetPiece.pos;
-        const groupedPiecesIds = startPos > 0 ? myPieces.filter(p => p.pos === startPos).map(p => p.id) : [pieceId];
-        const destPos = targetDestPos;
+            const steps = YUT_RESULTS[yutKey].steps;
+            const isBackDo = steps === -1;
+            const myPieces = [...currentRoom.pieces[playingTeam]];
+            const targetPiece = myPieces.find(p => p.id === pieceId);
+            
+            if (isBackDo && targetPiece.pos === 0) {
+                alert("대기 중인 말은 빽도로 이동할 수 없습니다.");
+                return;
+            }
 
-        const updatedMyPieces = myPieces.map(p => {
-          if (groupedPiecesIds.includes(p.id)) return { ...p, pos: destPos };
-          return p;
-        });
+            const startPos = targetPiece.pos;
+            const groupedPiecesIds = startPos > 0 ? myPieces.filter(p => p.pos === startPos).map(p => p.id) : [pieceId];
+            const destPos = targetDestPos;
 
-        let extraTurnFromCatch = false;
-        const oppPlayingTeam = playingTeam === 'A' ? 'B' : 'A';
-        let updatedOppPieces = [...currentRoom.pieces[oppPlayingTeam]];
-
-        if (destPos > 0 && destPos < 30) {
-          const caughtPieces = updatedOppPieces.filter(p => p.pos === destPos);
-          if (caughtPieces.length > 0) {
-            updatedOppPieces = updatedOppPieces.map(p => {
-              if (p.pos === destPos) return { ...p, pos: 0 };
+            const updatedMyPieces = myPieces.map(p => {
+              if (groupedPiecesIds.includes(p.id)) return { ...p, pos: destPos };
               return p;
             });
-            extraTurnFromCatch = true;
-          }
+
+            let extraTurnFromCatch = false;
+            const oppPlayingTeam = playingTeam === 'A' ? 'B' : 'A';
+            let updatedOppPieces = [...currentRoom.pieces[oppPlayingTeam]];
+
+            if (destPos > 0 && destPos < 30) {
+              const caughtPieces = updatedOppPieces.filter(p => p.pos === destPos);
+              if (caughtPieces.length > 0) {
+                updatedOppPieces = updatedOppPieces.map(p => {
+                  if (p.pos === destPos) return { ...p, pos: 0 };
+                  return p;
+                });
+                extraTurnFromCatch = true;
+              }
+            }
+
+            if (extraTurnFromCatch) SoundFX.catch();
+            else SoundFX.move();
+
+            let newChances = currentRoom.throwChances;
+            let turnMsg = "";
+            
+            if (extraTurnFromCatch) {
+              newChances += 1; 
+              turnMsg = ` 상대 말을 잡았습니다! 한 번 더 던지세요.`;
+            }
+
+            const piecesUpdate = { [playingTeam]: updatedMyPieces, [oppPlayingTeam]: updatedOppPieces };
+            const isWin = updatedMyPieces.every(p => p.pos === 30);
+            
+            const updateData = {
+              pieces: piecesUpdate, yutQueue: newQueue, throwChances: newChances,
+              logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] 말이 이동했습니다.${turnMsg}`),
+              lastActionTime: Date.now() 
+            };
+
+            if (isWin) {
+              SoundFX.win();
+              updateData.status = 'finished';
+              updateData.winnerTeam = playingTeam;
+              updateData.logs = arrayUnion(`🎉 ${playingTeam === 'A' ? '팀 A' : '팀 B'}가 승리했습니다! 게임 종료.`);
+
+              const winners = currentRoom.players.filter(p => p.team === playingTeam && !p.isBot);
+              const losers = currentRoom.players.filter(p => p.team !== playingTeam && p.team !== 'spectator' && !p.isBot);
+
+              currentRoom.players.forEach(async (p) => {
+                 if (p.isBot || p.team === 'spectator') return;
+                 const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_users', p.uid);
+                 const isWinner = p.team === playingTeam;
+                 const opps = isWinner ? losers : winners;
+                 
+                 try {
+                   const userSnap = await getDoc(userRef);
+                   let updates = {};
+                   if (isWinner) updates.wins = increment(1);
+                   else updates.losses = increment(1);
+                   
+                   opps.forEach(opp => {
+                       if (isWinner) updates[`versus.${opp.uid}.wins`] = increment(1);
+                       else updates[`versus.${opp.uid}.losses`] = increment(1);
+                       updates[`versus.${opp.uid}.name`] = opp.name;
+                   });
+
+                   if (!userSnap.exists()) {
+                      let initialData = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, versus: {} };
+                      opps.forEach(opp => {
+                          initialData.versus[opp.uid] = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, name: opp.name };
+                      });
+                      await setDoc(userRef, initialData);
+                   } else {
+                      await updateDoc(userRef, updates);
+                   }
+                 } catch(err) {
+                   console.error("전적 업데이트 에러:", err);
+                 }
+              });
+            }
+
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), updateData);
+            setSelectedPiece(null);
+            setPreviewPos([]);
+            setPendingMove(null);
+
+            if (!isWin) await checkTurnEnd(newChances, newQueue, currentRoom); 
+        } finally {
+            isActionLocked.current = false; // 락 해제
         }
-
-        if (extraTurnFromCatch) SoundFX.catch();
-        else SoundFX.move();
-
-        let newChances = currentRoom.throwChances;
-        let turnMsg = "";
-        
-        if (extraTurnFromCatch) {
-          newChances += 1; 
-          turnMsg = ` 상대 말을 잡았습니다! 한 번 더 던지세요.`;
-        }
-
-        const piecesUpdate = { [playingTeam]: updatedMyPieces, [oppPlayingTeam]: updatedOppPieces };
-        const isWin = updatedMyPieces.every(p => p.pos === 30);
-        
-        const updateData = {
-          pieces: piecesUpdate, yutQueue: newQueue, throwChances: newChances,
-          logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] 말이 이동했습니다.${turnMsg}`),
-          lastActionTime: Date.now() 
-        };
-
-        if (isWin) {
-          SoundFX.win();
-          updateData.status = 'finished';
-          updateData.winnerTeam = playingTeam;
-          updateData.logs = arrayUnion(`🎉 ${playingTeam === 'A' ? '팀 A' : '팀 B'}가 승리했습니다! 게임 종료.`);
-
-          const winners = currentRoom.players.filter(p => p.team === playingTeam && !p.isBot);
-          const losers = currentRoom.players.filter(p => p.team !== playingTeam && p.team !== 'spectator' && !p.isBot);
-
-          currentRoom.players.forEach(async (p) => {
-             if (p.isBot || p.team === 'spectator') return;
-             const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'yut_users', p.uid);
-             const isWinner = p.team === playingTeam;
-             const opps = isWinner ? losers : winners;
-             
-             try {
-               const userSnap = await getDoc(userRef);
-               let updates = {};
-               if (isWinner) updates.wins = increment(1);
-               else updates.losses = increment(1);
-               
-               opps.forEach(opp => {
-                   if (isWinner) updates[`versus.${opp.uid}.wins`] = increment(1);
-                   else updates[`versus.${opp.uid}.losses`] = increment(1);
-                   updates[`versus.${opp.uid}.name`] = opp.name;
-               });
-
-               if (!userSnap.exists()) {
-                  let initialData = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, versus: {} };
-                  opps.forEach(opp => {
-                      initialData.versus[opp.uid] = { wins: isWinner ? 1 : 0, losses: !isWinner ? 1 : 0, name: opp.name };
-                  });
-                  await setDoc(userRef, initialData);
-               } else {
-                  await updateDoc(userRef, updates);
-               }
-             } catch(err) {
-               console.error("전적 업데이트 에러:", err);
-             }
-          });
-        }
-
-        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), updateData);
-        setSelectedPiece(null);
-        setPreviewPos([]);
-        setPendingMove(null);
-
-        if (!isWin) await checkTurnEnd(newChances, newQueue, currentRoom); 
       };
 
       const claimVictoryByTimeout = async () => {
@@ -1571,11 +1608,13 @@
           return (
             <div key={`piece-${p.team}-${teamPiecesHere[0].id}`} 
               onClick={(e) => {
-                // 클릭한 말의 위치가 현재 보류 중인 이동 목적지에 포함될 경우 -> 말 잡기/업기 실행!
-                if (pendingMove && pendingMove.dests.includes(p.pos)) {
-                  e.stopPropagation();
-                  executeMove(pendingMove.pieceId, p.pos, pendingMove.yutKey, pendingMove.queueIndex);
-                  return;
+                // 🎯 클릭한 말의 위치가 현재 보류 중인 이동 목적지에 포함될 경우 -> 말 잡기/업기 실행!
+                if (pendingMove) {
+                   if (pendingMove.dests.includes(p.pos)) {
+                      e.stopPropagation();
+                      executeMove(pendingMove.pieceId, p.pos, pendingMove.yutKey, pendingMove.queueIndex);
+                   }
+                   return; // 목적지 선택 모드일 때는 다른 말을 선택하지 않도록 철벽 방어
                 }
                 // 아닐 경우 정상적인 말 선택
                 if (!isSpectator && isMyTurn && !isRolling && p.team === playingTeam) {
@@ -1600,6 +1639,7 @@
       return (
         <div className="flex flex-col lg:flex-row h-full lg:h-[100dvh] w-full bg-[#f3f4f6] relative">
           
+          {/* Victory/Defeat (Result) Overlay */}
           {roomData.status === 'finished' && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
               <div className="bg-white p-8 md:p-12 rounded-3xl shadow-2xl flex flex-col items-center text-center mx-4 max-w-sm w-full animate-[textPop_0.5s_ease-out]">
@@ -1629,6 +1669,7 @@
             </div>
           )}
 
+          {/* --- 완벽한 3D 반원통 윷가락 렌더링 --- */}
           {isRolling && showYutMotion && (
             <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
               <div className="absolute inset-0 bg-black/30"></div>
@@ -1654,8 +1695,10 @@
             </div>
           )}
 
+          {/* Left Area: Game Board & Controls (모바일에서는 무조건 100dvh 핏) */}
           <div className="w-full lg:flex-1 h-[100dvh] lg:h-full flex flex-col p-2 sm:p-4 md:p-6 relative flex-shrink-0">
             
+            {/* Header */}
             <div className="flex justify-between items-center mb-2 md:mb-4 bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-200 flex-shrink-0">
               <div>
                 <div className="flex items-center gap-2">
@@ -1678,6 +1721,7 @@
                 </div>
               </div>
               <div className="flex items-center gap-1 md:gap-2">
+                 {/* 윷 모션 토글 버튼 추가 */}
                  <button onClick={() => setShowYutMotion(!showYutMotion)} className="flex items-center gap-1 md:gap-2 text-gray-500 hover:text-amber-600 font-bold px-2 py-1.5 md:px-3 md:py-2 rounded-lg bg-gray-100 hover:bg-amber-50 transition-colors text-[10px] md:text-sm whitespace-nowrap">
                    {showYutMotion ? '👁️ 모션 켜짐' : '🙈 모션 꺼짐'}
                  </button>
@@ -1687,7 +1731,10 @@
               </div>
             </div>
 
+            {/* Board Container */}
             <div className="flex-1 flex flex-col min-h-0 w-full bg-white rounded-2xl shadow-sm border border-gray-200 p-2 md:p-6 items-center justify-center relative">
+               
+               {/* 로컬룰용 목적지 선택 안내 메시지 (갈림길일 경우) */}
                {pendingMove && (
                   <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white px-4 md:px-6 py-2 rounded-full font-bold shadow-lg z-50 animate-bounce flex items-center text-xs md:text-sm whitespace-nowrap">
                      갈림길입니다! 반짝이는 위치를 클릭하세요.
@@ -1709,6 +1756,7 @@
                   </div>
                </div>
 
+               {/* 실제 윷판 영역 */}
                <div className="flex-1 w-full flex items-center justify-center min-h-0 relative mt-4 md:mt-0">
                  <div className="relative w-full aspect-square max-w-[300px] sm:max-w-[400px] md:max-w-[450px] max-h-[300px] sm:max-h-[400px] md:max-h-[450px] mx-auto flex-shrink-0">
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -1742,6 +1790,7 @@
                     })}
                     {renderPiecesOnBoard()}
                     
+                    {/* 출발/도착 박스 선택 가능하도록 수정 */}
                     <div 
                       onClick={(e) => {
                          if (pendingMove && pendingMove.dests.includes(30)) {
@@ -1760,7 +1809,9 @@
                </div>
             </div>
 
+            {/* Bottom Controls */}
             <div className="bg-white mt-2 md:mt-4 rounded-xl md:rounded-3xl shadow-sm border border-gray-200 p-2 sm:p-4 md:p-6 flex flex-row gap-2 md:gap-8 flex-shrink-0">
+              {/* 내 대기 말 영역 */}
               <div className="flex flex-col justify-center border-r border-gray-200 pr-2 md:pr-8 w-1/3 sm:w-auto">
                 <h3 className="font-bold text-gray-700 mb-1 md:mb-2 flex items-center gap-1 md:gap-2 text-[10px] md:text-sm">
                   {isSpectator ? `[${myTeam}팀] 대기 말` : '내 대기 말'}
@@ -1782,6 +1833,7 @@
                 </div>
               </div>
 
+              {/* 액션 컨트롤 영역 */}
               <div className="flex-1 flex flex-col justify-center min-w-0">
                 {isOpponentTimeout ? (
                   <button onClick={claimVictoryByTimeout} 
@@ -1801,6 +1853,7 @@
                   {roomData.yutQueue.map((yutKey, idx) => {
                     const res = YUT_RESULTS[yutKey];
 
+                    // 🎯 목적지 미리보기 이벤트 (Hover & Touch)
                     const handlePreviewOn = () => {
                       if (!isSpectator && selectedPiece && !pendingMove) {
                         const targetPiece = roomData.pieces[playingTeam].find(p => p.id === selectedPiece.id);
@@ -1820,6 +1873,7 @@
                                if (dests.length === 1) {
                                    executeMove(piece.id, dests[0], yutKey, idx);
                                } else {
+                                   // 로컬룰 갈림길 발생 시 상태 저장
                                    setPendingMove({ pieceId: piece.id, yutKey: yutKey, queueIndex: idx, dests: dests });
                                }
                            }
@@ -1843,7 +1897,10 @@
             </div>
           </div>
 
+          {/* Mobile Overlay Background */}
           {isMobileChatOpen && <div className="fixed inset-0 bg-black/60 z-[70] lg:hidden backdrop-blur-sm" onClick={() => setIsMobileChatOpen(false)}></div>}
+
+          {/* Right Sidebar (Desktop Fixed Right, Mobile Slide-up Overlay) */}
           <div className={`fixed bottom-0 left-0 right-0 z-[80] h-[85dvh] bg-white rounded-t-3xl lg:rounded-none lg:static lg:h-full lg:w-80 lg:border-l border-gray-200 flex flex-col shadow-2xl lg:shadow-sm transform transition-transform duration-300 ${isMobileChatOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
             <div className="flex justify-between items-center p-4 border-b border-gray-200 lg:hidden bg-gray-50 rounded-t-3xl flex-shrink-0">
                <span className="font-black text-gray-800 text-lg">방향 채팅방</span>
@@ -1879,6 +1936,7 @@
       const chatContainerRef = useRef(null);
       const isSpectator = myPlayerInfo.team === 'spectator';
 
+      // 강제 스크롤 대신 컨테이너 내부의 scrollTop을 조작하여 화면 밀림 완벽 차단
       useEffect(() => {
         if (chatContainerRef.current) {
           chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -1894,11 +1952,13 @@
         setInput('');
       };
 
+      // 이모티콘(매크로) 즉시 전송 함수
       const sendEmoticon = async (text) => {
         if (!db) return;
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', `yut_rooms_${roomId}_chat`), {
           text: text, uid: myPlayerInfo.uid, name: myPlayerInfo.name, team: myPlayerInfo.team, mode: chatMode, timestamp: Date.now()
         });
+        // 팝업 애니메이션을 위해 roomData의 emoticonEvent 필드 업데이트
         await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
           emoticonEvent: { id: Date.now(), text: text, sender: myPlayerInfo.name }
         });
