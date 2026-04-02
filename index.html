@@ -113,7 +113,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     
-    // 데이터베이스 방 목록 저장 폴더명 (기존 전적 유지를 위해 v3 복구)
+    // 데이터베이스 방 목록 저장 폴더명 
     const GLOBAL_APP_ID = 'yutnori_live_match_final_v3'; 
 
     // --- Yut Board Logic ---
@@ -173,46 +173,43 @@
           let nextNodes = [];
           if (curr === 5) { // 우측 상단 모서리
             if (i === 0) {
-               if (rule === 'local') nextNodes = [6, 21]; // 로컬: 모서리 출발 시 직진/대각선 선택 가능
-               else nextNodes = [21]; // 전통: 모서리 출발 시 강제 지름길
+               if (rule === 'local') nextNodes = [6, 21]; 
+               else nextNodes = [21]; 
             } else {
-               nextNodes = [6]; // 거쳐가는 경우 무조건 직진
+               nextNodes = [6]; 
             }
           }
           else if (curr === 10) { // 좌측 상단 모서리
             if (i === 0) {
-               if (rule === 'local') nextNodes = [11, 26]; // 로컬: 모서리 출발 시 직진/대각선 선택 가능
-               else nextNodes = [26]; // 전통: 모서리 출발 시 강제 지름길
+               if (rule === 'local') nextNodes = [11, 26]; 
+               else nextNodes = [26]; 
             } else {
-               nextNodes = [11]; // 거쳐가는 경우 무조건 직진
+               nextNodes = [11]; 
             }
           }
           else if (curr === 23) { // 정중앙 교차점
             if (i === 0) {
-                // 딱 교차점에서 출발하는 경우
                 if (rule === 'local') {
-                    nextNodes = [24, 28]; // 로컬룰: 좌측 하단(24) 또는 출구 방향(28) 선택 가능
+                    nextNodes = [24, 28]; 
                 } else {
-                    nextNodes = [28]; // 전통룰: 무조건 출구 방향으로 강제
+                    nextNodes = [28]; 
                 }
             } else {
-                // 교차점을 '거쳐가는' 경우: 이전 궤적을 확인하여 그대로 직진 유지 (꺾임 버그 완벽 해결)
                 let prevNode = path[path.length - 2];
                 if (prevNode === 22) {
-                    nextNodes = [24]; // 우측 상단에서 내려오던 중이면 -> 좌측 하단(24) 직진
+                    nextNodes = [24]; 
                 } else if (prevNode === 27) {
-                    nextNodes = [28]; // 좌측 상단에서 내려오던 중이면 -> 출구(28) 직진
+                    nextNodes = [28]; 
                 } else if (prevNode === 24 || prevNode === 28) {
-                    // 빽도로 인해 역주행 중인 경우의 방어코드
                     nextNodes = prevNode === 24 ? [22] : [27];
                 } else {
-                    nextNodes = [28]; // 예외 처리 시 기본값
+                    nextNodes = [28]; 
                 }
             }
           }
-          else if (curr === 20) { nextNodes = [30]; } // 출구
+          else if (curr === 20) { nextNodes = [30]; } 
           else if (curr === 25) { nextNodes = [15]; } 
-          else if (curr === 15) { nextNodes = [16]; } // 좌측 하단은 빙 돌아가는 길로 합류
+          else if (curr === 15) { nextNodes = [16]; } 
           else if (curr === 29) { nextNodes = [20]; }
           else {
             if (curr < 20) nextNodes = [curr + 1];
@@ -231,7 +228,7 @@
     };
 
     // ==========================================
-    // Auth View (로그인 / 회원가입)
+    // Auth View
     // ==========================================
     function AuthView({ auth, setAuthError }) {
       const [isLogin, setIsLogin] = useState(true);
@@ -457,7 +454,6 @@
         return () => unsubscribe();
       }, [user]);
 
-      // 방 목록 가져오기 및 게임 중인 방 자동 접속 처리
       useEffect(() => {
         if (!user || !db) return;
         const roomsRef = collection(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms');
@@ -479,7 +475,6 @@
         return () => unsubscribe();
       }, [user, db]);
 
-      // 특정 방 구독 및 뷰(View) 상태 동기화 (단일 진실의 원천)
       useEffect(() => {
         if (!user || !db || !activeRoomId) return;
         const roomRef = doc(db, 'artifacts', GLOBAL_APP_ID, 'public', 'data', 'yut_rooms', activeRoomId);
@@ -793,6 +788,7 @@
               </div>
             </div>
 
+            {/* 비밀방 및 룰 생성 영역 */}
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 md:mb-6 gap-4 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
               <h2 className="text-xl md:text-2xl font-bold text-gray-800 flex items-center gap-2 w-full sm:w-auto"><Play className="text-amber-500 w-5 h-5 md:w-6 md:h-6" /> 게임 방 목록</h2>
               <div className="flex flex-col gap-3 w-full sm:w-auto">
@@ -1028,7 +1024,7 @@
     }
 
     // ==========================================
-    // Character Select View
+    // Character Select View 
     // ==========================================
     function CharacterSelectView({ roomData, roomId, user, db, appId, onLeave }) {
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
@@ -1255,7 +1251,6 @@
       const [now, setNow] = useState(Date.now());
       const [isMobileChatOpen, setIsMobileChatOpen] = useState(false);
       
-      // 윷 모션 끄기 상태 관리
       const [showYutMotion, setShowYutMotion] = useState(true);
 
       const myPlayerInfo = roomData.players.find(p => p.uid === user.uid) || roomData.spectators?.find(p => p.uid === user.uid) || { uid: user.uid, name: '관전자', team: 'spectator' };
@@ -1300,7 +1295,6 @@
                setRollingResult(null);
              }, 1200);
           } else {
-             // 윷 모션 끄기 모드일 때: 애니메이션 없이 짧게 처리
              setIsRolling(true);
              setTimeout(() => { setIsRolling(false); }, 100);
           }
@@ -1337,6 +1331,8 @@
         if (!isMyTurn || isRolling) return alert("당신의 차례가 아닙니다.");
         if (roomData.throwChances <= 0) return alert("더 이상 윷을 던질 수 없습니다. 말을 이동하세요.");
         
+        setIsRolling(true); // 즉각적인 더블클릭 및 씹힘 방지 Lock
+
         const myPieces = roomData.pieces[playingTeam];
         const activePieces = myPieces.filter(p => p.pos !== 30);
         if (activePieces.length === 0) return alert("모든 말이 완주했습니다!");
@@ -1362,7 +1358,14 @@
           const currActivePieces = currentRoom.pieces[playingTeam].filter(p => p.pos !== 30);
           const onBoardPieces = currActivePieces.filter(p => p.pos > 0 && p.pos < 30);
           let newChances = currentRoom.throwChances - 1; 
-          if (resultKey === '4' || resultKey === '5') newChances += 1;
+
+          let logMsg = `[${CHARACTERS[currentRoom.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`;
+
+          // 모, 윷 시 보너스 턴 보장 로직
+          if (resultKey === '4' || resultKey === '5') {
+              newChances += 1;
+              logMsg = `🎉 [${CHARACTERS[currentRoom.characters[playingTeam]].name}] ${result.name}! 한 번 더 던지세요!`;
+          }
 
           if (resultKey === '-1' && onBoardPieces.length === 0) {
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
@@ -1375,7 +1378,7 @@
 
           const newQueue = [...(currentRoom.yutQueue || []), resultKey];
           await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'yut_rooms', roomId), {
-            yutQueue: newQueue, throwChances: newChances, logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] ${result.name}를 던졌습니다!`),
+            yutQueue: newQueue, throwChances: newChances, logs: arrayUnion(logMsg),
             lastActionTime: Date.now()
           });
           await checkTurnEnd(newChances, newQueue, currentRoom);
@@ -1433,7 +1436,7 @@
         
         if (extraTurnFromCatch) {
           newChances += 1; 
-          turnMsg = `상대 말을 잡았습니다! 한 번 더 던지세요.`;
+          turnMsg = ` 상대 말을 잡았습니다! 한 번 더 던지세요.`;
         }
 
         const piecesUpdate = { [playingTeam]: updatedMyPieces, [oppPlayingTeam]: updatedOppPieces };
@@ -1441,7 +1444,7 @@
         
         const updateData = {
           pieces: piecesUpdate, yutQueue: newQueue, throwChances: newChances,
-          logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] 말이 이동했습니다. ${turnMsg}`),
+          logs: arrayUnion(`[${CHARACTERS[currentRoom.characters[playingTeam]].name}] 말이 이동했습니다.${turnMsg}`),
           lastActionTime: Date.now() 
         };
 
@@ -1675,7 +1678,6 @@
                 </div>
               </div>
               <div className="flex items-center gap-1 md:gap-2">
-                 {/* 윷 모션 토글 버튼 추가 */}
                  <button onClick={() => setShowYutMotion(!showYutMotion)} className="flex items-center gap-1 md:gap-2 text-gray-500 hover:text-amber-600 font-bold px-2 py-1.5 md:px-3 md:py-2 rounded-lg bg-gray-100 hover:bg-amber-50 transition-colors text-[10px] md:text-sm whitespace-nowrap">
                    {showYutMotion ? '👁️ 모션 켜짐' : '🙈 모션 꺼짐'}
                  </button>
@@ -1740,7 +1742,6 @@
                     })}
                     {renderPiecesOnBoard()}
                     
-                    {/* 출발/도착 박스 선택 가능하도록 수정 */}
                     <div 
                       onClick={(e) => {
                          if (pendingMove && pendingMove.dests.includes(30)) {
